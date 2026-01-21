@@ -14,8 +14,17 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 
-# ---------- HEADER ----------
-st.title("CareAssist", anchor=False)
+# Adding connection to login page
+col1, col2 = st.columns([6,1])
+with col1:
+    # ---------- HEADER ----------
+    st.title("CareAssist", anchor=False)
+
+with col2:
+    if st.button("Login"):
+        st.switch_page("pages/Login.py")
+
+
 st.subheader(
     "Pre-Consultation Health Screening & Decision Support System",
     anchor=False
