@@ -15,37 +15,43 @@ st.title("📄 Consultation Details")
 st.caption(f"Consultation ID: {consultation_id}")
 
 conn = get_connection()
-cur = conn.cursor(dictionary=True)
 
 # --------------------------------------------------
-# FETCH VITALS
+# FETCH VITALS (USE fetchall)
 # --------------------------------------------------
 
-cur.execute("""
+cur1 = conn.cursor(dictionary=True)
+cur1.execute("""
     SELECT *
     FROM patient_vitals
     WHERE consultation_id = %s
 """, (consultation_id,))
-vitals = cur.fetchone()
+
+vitals_rows = cur1.fetchall()   # ✅ consume everything
+cur1.close()
+
+vitals = vitals_rows[0] if vitals_rows else None
 
 # --------------------------------------------------
 # FETCH SYMPTOMS
 # --------------------------------------------------
 
-cur.execute("""
+cur2 = conn.cursor(dictionary=True)
+cur2.execute("""
     SELECT sm.symptom_name, sm.category
     FROM consultation_symptoms cs
     JOIN symptoms_master sm
         ON cs.symptom_id = sm.symptom_id
     WHERE cs.consultation_id = %s
 """, (consultation_id,))
-symptoms = cur.fetchall()
 
-cur.close()
+symptoms = cur2.fetchall()
+cur2.close()
+
 conn.close()
 
 # --------------------------------------------------
-# DISPLAY DATA
+# DISPLAY
 # --------------------------------------------------
 
 st.subheader("🤒 Symptoms")

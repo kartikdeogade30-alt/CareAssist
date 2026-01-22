@@ -140,7 +140,7 @@ elif st.session_state.chat_step == 4:
         st.rerun()
 
 # --------------------------------------------------
-# STEP 5 – CONFIRM & SUBMIT
+# STEP 5 – CONFIRM & SUBMIT (OPTION 1 APPLIED)
 # --------------------------------------------------
 
 elif st.session_state.chat_step == 5:
@@ -152,7 +152,7 @@ elif st.session_state.chat_step == 5:
     st.write("### 🗂 Category")
     st.write(st.session_state.chat_data["category"])
 
-    st.write("### 🤒 Symptoms (IDs)")
+    st.write("### 🤒 Symptoms")
     st.write(st.session_state.chat_data["symptoms"])
 
     st.write("### ❤️ Vitals")
@@ -165,7 +165,17 @@ elif st.session_state.chat_step == 5:
         try:
             v = st.session_state.chat_data["vitals"]
 
-            # Insert vitals
+            # --------------------------------------------------
+            # OPTION 1: SINGLE VITALS PER CONSULTATION
+            # --------------------------------------------------
+
+            # Delete existing vitals (if any)
+            cur.execute("""
+                DELETE FROM patient_vitals
+                WHERE consultation_id = %s
+            """, (consultation_id,))
+
+            # Insert latest vitals
             cur.execute("""
                 INSERT INTO patient_vitals
                 (consultation_id, height_cm, weight_kg, temperature_c,
@@ -179,7 +189,10 @@ elif st.session_state.chat_step == 5:
                 v["heart_rate"], v["spo2"]
             ))
 
-            # Insert symptoms
+            # --------------------------------------------------
+            # INSERT SYMPTOMS (APPEND-ONLY)
+            # --------------------------------------------------
+
             for symptom_id in st.session_state.chat_data["symptoms"]:
                 cur.execute("""
                     INSERT INTO consultation_symptoms
@@ -189,7 +202,10 @@ elif st.session_state.chat_step == 5:
 
             conn.commit()
 
-            # Clear session consultation state
+            # --------------------------------------------------
+            # CLEAN SESSION STATE
+            # --------------------------------------------------
+
             del st.session_state.consultation_id
             del st.session_state.chat_step
             del st.session_state.chat_data
