@@ -82,10 +82,16 @@ else:
     full_name = st.text_input("Full Name")
     gender = st.selectbox("Gender", ["MALE", "FEMALE", "OTHER"])
     dob = st.date_input("Date of Birth")
+    phone = st.text_input("Enter one contact number").strip()
+    email = st.text_input("Email")
     username = st.text_input("Choose Username").strip().lower()
     password = st.text_input("Password", type="password")
 
     if st.button("Create Account"):
+        if not phone.isdigit()or len(phone) < 10 or len(phone) > 15:
+            st.error("Enter valid phone number")
+            st.stop()
+
         conn = get_connection()
         cur = conn.cursor()
 
@@ -98,9 +104,9 @@ else:
         else:
             # Insert patient profile
             cur.execute("""
-                INSERT INTO patients (full_name, gender, date_of_birth)
-                VALUES (%s, %s, %s)
-            """, (full_name, gender, dob))
+                INSERT INTO patients (full_name, gender, date_of_birth, phone, email)
+                VALUES (%s, %s, %s, %s,%s)
+            """, (full_name, gender, dob, phone, email))
 
             patient_id = cur.lastrowid
 
