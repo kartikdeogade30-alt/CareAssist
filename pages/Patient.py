@@ -21,18 +21,35 @@ def get_patient_info(patient_id):
 
 def create_new_consultation(patient_id):
     conn = get_connection()
-    cursor = conn.cursor()
+    cur = conn.cursor()
 
-    query = """
-    INSERT INTO consultations (patient_id)
-    VALUES (%s)
-    """
-    cursor.execute(query, (patient_id,))
+    # 1️⃣ Check for existing ACTIVE consultation
+    cur.execute("""
+        SELECT consultation_id
+        FROM consultations
+        WHERE patient_id = %s
+          AND status = 'PENDING'
+        LIMIT 1
+    """, (patient_id,))
+    row = cur.fetchone()
+
+    # 2️⃣ If exists → reuse it
+    if row:
+        consultation_id = row[0]
+        cur.close()
+        conn.close()
+        return consultation_id
+
+    # 3️⃣ Else → create new consultation
+    cur.execute("""
+        INSERT INTO consultations (patient_id, status)
+        VALUES (%s, 'PENDING')
+    """, (patient_id,))
     conn.commit()
 
-    consultation_id = cursor.lastrowid
+    consultation_id = cur.lastrowid
 
-    cursor.close()
+    cur.close()
     conn.close()
     return consultation_id
 
@@ -92,14 +109,14 @@ def patient_dashboard():
     st.subheader("➕ New Consultation")
 
     if st.button("Start New Consultation"):
-        if "consultation_id" not in st.session_state:
             consultation_id = create_new_consultation(patient_id)
+
             st.session_state.consultation_id = consultation_id
             st.session_state.chat_step = 1
             st.session_state.chat_data = {}
 
-        st.success("New consultation started successfully.")
-        st.switch_page("pages/Chatbot.py")
+            st.success("New consultation started successfully.")
+            st.switch_page("pages/Chatbot.py")
 
     st.divider()
 
