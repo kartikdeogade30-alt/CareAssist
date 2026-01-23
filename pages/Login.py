@@ -1,6 +1,7 @@
 import streamlit as st
 import hashlib
 from database.db_connection import get_connection
+import datetime
 
 # ==================================================
 # PASSWORD HASHING (USED EVERYWHERE)
@@ -108,7 +109,11 @@ else:
 
     full_name = st.text_input("Full Name")
     gender = st.selectbox("Gender", ["MALE", "FEMALE", "OTHER"])
-    dob = st.date_input("Date of Birth")
+    dob = st.date_input(
+        "Date of Birth",
+        min_value=datetime.date(1900, 1, 1),
+        max_value=datetime.date.today()
+    )
     phone = st.text_input("Enter one contact number").strip()
     email = st.text_input("Email")
     username = st.text_input("Choose Username").strip().lower()
