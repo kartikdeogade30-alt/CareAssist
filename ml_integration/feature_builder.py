@@ -5,7 +5,7 @@ def build_features(consultation_id):
     conn = get_connection()
     cur = conn.cursor(dictionary=True)
 
-    # Patient info
+    # ---------------- Patient Info ----------------
     cur.execute("""
         SELECT p.date_of_birth, p.gender
         FROM consultations c
@@ -14,13 +14,21 @@ def build_features(consultation_id):
     """, (consultation_id,))
     patient = cur.fetchone()
 
-    # Vitals
+    # ---------------- Vitals ----------------
     cur.execute("""
         SELECT *
         FROM patient_vitals
         WHERE consultation_id = %s
     """, (consultation_id,))
     vitals = cur.fetchone()
+
+    # ---------------- Symptoms ----------------
+    cur.execute("""
+        SELECT symptom_name
+        FROM consultation_symptoms
+        WHERE consultation_id = %s
+    """, (consultation_id,))
+    symptoms = [row["symptom_name"] for row in cur.fetchall()]
 
     cur.close()
     conn.close()
@@ -49,5 +57,8 @@ def build_features(consultation_id):
         "weight_kg": vitals["weight_kg"],
         "height_cm": vitals["height_cm"],
 
-        "bmi": round(bmi, 2)
+        "bmi": round(bmi, 2),
+
+        # NEW
+        "symptoms": symptoms
     }
