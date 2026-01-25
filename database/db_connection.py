@@ -1,19 +1,21 @@
 import mysql.connector
-import os
 import streamlit as st
 
 def get_connection():
-    host = st.secrets.get("DB_HOST") or os.getenv("DB_HOST")
-    user = st.secrets.get("DB_USER") or os.getenv("DB_USER")
-    password = st.secrets.get("DB_PASSWORD") or os.getenv("DB_PASSWORD")
-    database = st.secrets.get("DB_NAME") or os.getenv("DB_NAME")
-    port = st.secrets.get("DB_PORT") or os.getenv("DB_PORT", 3306)
+    try:
+        host = st.secrets["DB_HOST"]
+        user = st.secrets["DB_USER"]
+        password = st.secrets["DB_PASSWORD"]
+        database = st.secrets["DB_NAME"]
+        port = int(st.secrets.get("DB_PORT", 3306))
+    except KeyError as e:
+        raise RuntimeError(f"Missing DB secret: {e}")
 
     return mysql.connector.connect(
         host=host,
         user=user,
         password=password,
         database=database,
-        port=int(port),
+        port=port,
         autocommit=False
     )
