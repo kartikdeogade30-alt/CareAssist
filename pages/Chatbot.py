@@ -1,17 +1,12 @@
 import streamlit as st
 from database.db_connection import get_connection
 from services.prediction_service import generate_and_store_prediction
+from pages.symptom_extractor import extract_symptoms
 
 # ==================================================
 # SAFETY CHECK
 # ==================================================
-# Chatbot must always have an active consultation
-# Consultation is created / reused before entering chatbot
-
-if (
-    "consultation_id" not in st.session_state
-    or "patient_id" not in st.session_state
-):
+if "consultation_id" not in st.session_state or "patient_id" not in st.session_state:
     st.error("No active consultation found.")
     st.stop()
 
@@ -23,10 +18,6 @@ st.caption(f"Consultation ID: {consultation_id}")
 # ==================================================
 # SESSION INITIALIZATION
 # ==================================================
-# chat_step controls the flow
-# chat_data temporarily stores all inputs
-# IMPORTANT: No DB writes until final submit
-
 if "chat_step" not in st.session_state:
     st.session_state.chat_step = 1
 
@@ -34,70 +25,49 @@ if "chat_data" not in st.session_state:
     st.session_state.chat_data = {}
 
 # ==================================================
-# HELPER: BACK NAVIGATION
+# HELPER
 # ==================================================
 def go_back():
-    st.session_state.chat_step -= 1
-    st.rerun()
+    if st.session_state.chat_step == 5:
+        st.session_state.chat_step = 4
+    elif st.session_state.chat_step == 4:
+        st.session_state.chat_step = 2
+    elif st.session_state.chat_step == 2:
+        st.session_state.chat_step = 1
+
 
 # ==================================================
-# STEP 1 – CHIEF COMPLAINT (REQUIRED)
+# STEP 1 – CHIEF COMPLAINT
 # ==================================================
-# Always required for clinical context
-# Even "Routine checkup" or "No complaints" is valid
-
 if st.session_state.chat_step == 1:
     st.subheader("Step 1: Chief Complaint")
 
     complaint = st.text_area(
         "What issue are you facing?",
-        placeholder="e.g. Routine checkup, Follow-up visit, No specific complaints",
+        placeholder="e.g. Routine checkup, fever, stomach pain",
         value=st.session_state.chat_data.get("complaint", "")
     )
 
     if st.button("Next"):
         if not complaint.strip():
-            st.warning("Please enter a brief description.")
+            st.warning("Chief complaint is required.")
         else:
             st.session_state.chat_data["complaint"] = complaint
             st.session_state.chat_step = 2
             st.rerun()
 
 # ==================================================
-# STEP 2 – SYMPTOM CATEGORIES (OPTIONAL)
+# STEP 2 – SYMPTOMS (OPTIONAL)
 # ==================================================
-# Patient can explicitly say they have NO symptoms
-# This avoids forcing incorrect data
-
 elif st.session_state.chat_step == 2:
-    st.subheader("Step 2: Symptoms Overview")
+    st.subheader("Step 2: Symptoms")
 
-    no_symptoms = st.checkbox(
-        "I do not have any symptoms",
-        value=st.session_state.chat_data.get("no_symptoms", False)
+    symptom_text = st.text_area(
+        "Describe any symptoms (or type 'no symptoms')",
+        placeholder="e.g. fever, cough, headache",
+        value=st.session_state.chat_data.get("symptom_text", "")
     )
 
-    categories = []
-    if not no_symptoms:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT DISTINCT category
-            FROM symptoms_master
-            ORDER BY category
-        """)
-        categories = [row[0] for row in cur.fetchall()]
-        cur.close()
-        conn.close()
-
-        selected_categories = st.multiselect(
-            "Select symptom categories",
-            categories,
-            default=st.session_state.chat_data.get("categories", [])
-        )
-    else:
-        selected_categories = []
-
     col1, col2 = st.columns(2)
 
     with col1:
@@ -106,95 +76,21 @@ elif st.session_state.chat_step == 2:
 
     with col2:
         if st.button("Next"):
-            if not no_symptoms and not selected_categories:
-                st.warning("Select at least one category or choose 'No symptoms'.")
+            if symptom_text.strip().lower() == "no symptoms":
+                st.session_state.chat_data["no_symptoms"] = True
+                st.session_state.chat_data["symptoms"] = []
             else:
-                st.session_state.chat_data["no_symptoms"] = no_symptoms
-                st.session_state.chat_data["categories"] = selected_categories
-                st.session_state.chat_step = 3
-                st.rerun()
+                extracted = extract_symptoms(symptom_text)
+                st.session_state.chat_data["symptoms"] = extracted
+                st.session_state.chat_data["no_symptoms"] = False
+
+            st.session_state.chat_data["symptom_text"] = symptom_text
+            st.session_state.chat_step = 4
+            st.rerun()
 
 # ==================================================
-# STEP 3 – SELECT SYMPTOMS (SKIPPED IF NO SYMPTOMS)
+# STEP 4 – VITALS (REQUIRED)
 # ==================================================
-# If patient has no symptoms, we skip this step entirely
-
-elif st.session_state.chat_step == 3:
-
-    if st.session_state.chat_data.get("no_symptoms"):
-        # Explicitly store empty symptoms list
-        st.session_state.chat_data["symptoms"] = []
-        st.info("No symptoms selected for this consultation.")
-        st.session_state.chat_step = 4
-        st.rerun()
-
-    st.subheader("Step 3: Select Symptoms")
-
-    categories = st.session_state.chat_data["categories"]
-
-    conn = get_connection()
-    cur = conn.cursor(dictionary=True)
-
-    placeholders = ",".join(["%s"] * len(categories))
-    query = f"""
-        SELECT symptom_id, symptom_name, category
-        FROM symptoms_master
-        WHERE category IN ({placeholders})
-        ORDER BY category, symptom_name
-    """
-    cur.execute(query, tuple(categories))
-    symptoms = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    # Group symptoms by category for clean UI
-    grouped = {}
-    for s in symptoms:
-        grouped.setdefault(s["category"], []).append(s)
-
-    selected_symptom_ids = set()
-
-    for category, items in grouped.items():
-        st.markdown(f"**{category}**")
-        names = [i["symptom_name"] for i in items]
-
-        chosen = st.multiselect(
-            f"Select {category} symptoms",
-            names,
-            default=[
-                i["symptom_name"]
-                for i in items
-                if i["symptom_id"] in st.session_state.chat_data.get("symptoms", [])
-            ],
-            key=f"sym_{category}"
-        )
-
-        for name in chosen:
-            for i in items:
-                if i["symptom_name"] == name:
-                    selected_symptom_ids.add(i["symptom_id"])
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("⬅ Back"):
-            go_back()
-
-    with col2:
-        if st.button("Next"):
-            if not selected_symptom_ids:
-                st.warning("Please select at least one symptom.")
-            else:
-                st.session_state.chat_data["symptoms"] = selected_symptom_ids
-                st.session_state.chat_step = 4
-                st.rerun()
-
-# ==================================================
-# STEP 4 – VITALS (ALWAYS REQUIRED)
-# ==================================================
-# Vitals represent clinical snapshot
-# Exactly ONE vitals row per consultation
-
 elif st.session_state.chat_step == 4:
     st.subheader("Step 4: Enter Vitals")
 
@@ -231,21 +127,19 @@ elif st.session_state.chat_step == 4:
             st.rerun()
 
 # ==================================================
-# STEP 5 – CONFIRM & SUBMIT (SINGLE TRANSACTION)
+# STEP 5 – CONFIRM & SUBMIT
 # ==================================================
-
 elif st.session_state.chat_step == 5:
     st.subheader("Step 5: Confirm & Submit")
 
     st.write("### 📝 Chief Complaint")
     st.write(st.session_state.chat_data["complaint"])
 
+    st.write("### 🤒 Symptoms")
     if st.session_state.chat_data.get("no_symptoms"):
-        st.write("### 🤒 Symptoms")
-        st.info("No symptoms reported by patient.")
+        st.info("No symptoms reported.")
     else:
-        st.write("### 🤒 Symptoms (IDs)")
-        st.write(st.session_state.chat_data["symptoms"])
+        st.write(st.session_state.chat_data.get("symptoms", []))
 
     st.write("### ❤️ Vitals")
     st.json(st.session_state.chat_data["vitals"])
@@ -264,21 +158,18 @@ elif st.session_state.chat_step == 5:
             try:
                 v = st.session_state.chat_data["vitals"]
 
-                # Save chief complaint
+                # Update chief complaint
                 cur.execute("""
                     UPDATE consultations
                     SET chief_complaint = %s
                     WHERE consultation_id = %s
-                """, (
-                    st.session_state.chat_data["complaint"],
-                    consultation_id
-                ))
+                """, (st.session_state.chat_data["complaint"], consultation_id))
 
-                # Enforce ONE vitals row per consultation
-                cur.execute("""
-                    DELETE FROM patient_vitals
-                    WHERE consultation_id = %s
-                """, (consultation_id,))
+                # Replace vitals
+                cur.execute(
+                    "DELETE FROM patient_vitals WHERE consultation_id=%s",
+                    (consultation_id,)
+                )
 
                 cur.execute("""
                     INSERT INTO patient_vitals
@@ -293,22 +184,42 @@ elif st.session_state.chat_step == 5:
                     v["heart_rate"], v["spo2"]
                 ))
 
-                # Insert symptoms ONLY if present
-                for symptom_id in st.session_state.chat_data.get("symptoms", []):
-                    cur.execute("""
-                        INSERT INTO consultation_symptoms
-                        (consultation_id, symptom_id)
-                        VALUES (%s, %s)
-                    """, (consultation_id, symptom_id))
+                # Store symptoms (TEXT for now)
+                # -----------------------------------------
+                # INSERT SYMPTOMS (name → symptom_id)
+                # -----------------------------------------
+
+                # clear old symptoms (safe re-submit)
+                cur.execute(
+                    "DELETE FROM consultation_symptoms WHERE consultation_id = %s",
+                    (consultation_id,)
+                )
+
+                symptoms = st.session_state.chat_data.get("symptoms", [])
+
+                if symptoms:
+                    for symptom_name in symptoms:
+                        # fetch symptom_id from master
+                        cur.execute("""
+                            SELECT symptom_id
+                            FROM symptoms_master
+                            WHERE symptom_name = %s
+                        """, (symptom_name,))
+                        
+                        row = cur.fetchone()
+                        if row:
+                            symptom_id = row[0]
+
+                            cur.execute("""
+                                INSERT INTO consultation_symptoms
+                                (consultation_id, symptom_id)
+                                VALUES (%s, %s)
+                            """, (consultation_id, symptom_id))
+
 
                 conn.commit()
-
-                # Clear consultation-specific session state
-                del st.session_state.consultation_id
-                del st.session_state.chat_step
-                del st.session_state.chat_data
-
                 generate_and_store_prediction(consultation_id)
+
                 st.success("Consultation submitted successfully.")
                 st.switch_page("pages/Patient.py")
 
