@@ -1,5 +1,6 @@
 import streamlit as st
 from database.db_connection import get_connection
+from services.prediction_service import generate_and_store_prediction
 
 # ==================================================
 # SAFETY CHECK
@@ -151,7 +152,7 @@ elif st.session_state.chat_step == 3:
     for s in symptoms:
         grouped.setdefault(s["category"], []).append(s)
 
-    selected_symptom_ids = []
+    selected_symptom_ids = set()
 
     for category, items in grouped.items():
         st.markdown(f"**{category}**")
@@ -171,7 +172,7 @@ elif st.session_state.chat_step == 3:
         for name in chosen:
             for i in items:
                 if i["symptom_name"] == name:
-                    selected_symptom_ids.append(i["symptom_id"])
+                    selected_symptom_ids.add(i["symptom_id"])
 
     col1, col2 = st.columns(2)
 
@@ -307,6 +308,7 @@ elif st.session_state.chat_step == 5:
                 del st.session_state.chat_step
                 del st.session_state.chat_data
 
+                generate_and_store_prediction(consultation_id)
                 st.success("Consultation submitted successfully.")
                 st.switch_page("pages/Patient.py")
 
