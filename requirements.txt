@@ -1,0 +1,14 @@
+streamlit
+
+mysql-connector-python
+
+pandas
+numpy
+
+scikit-learn
+
+joblib
+
+xgboost
+lightgbm
+catboost
