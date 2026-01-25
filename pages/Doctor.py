@@ -22,8 +22,8 @@ def get_doctor_name(doctor_id):
     cur = conn.cursor(dictionary=True)
 
     cur.execute("""
-        SELECT username
-        FROM doctor_login
+        SELECT full_name
+        FROM doctors
         WHERE doctor_id = %s
     """, (doctor_id,))
 
@@ -32,7 +32,7 @@ def get_doctor_name(doctor_id):
     cur.close()
     conn.close()
 
-    return row["username"] if row else "Doctor"
+    return row["full_name"] if row else "Doctor"
 
 
 def get_consultations_by_status(status):
