@@ -2,26 +2,21 @@ import json
 from database.db_connection import get_connection
 from ml_integration.feature_builder import build_features
 from ml_integration.risk_model import predict_risk
+from ml_integration.disease_model import predict_disease
 
 def generate_and_store_prediction(consultation_id):
     print(f"[AI] Triggered for consultation {consultation_id}")
 
     try:
         features = build_features(consultation_id)
-        print(f"[AI] Features: {features}")
 
-        if features is None:
-            prediction = {
-                "risk_level": "NOT_AVAILABLE",
-                "reason": "Insufficient patient vitals for AI prediction"
-            }
-        else:
-            risk_level = predict_risk(features)
-            prediction = {
-                "risk_level": risk_level
-            }
+        risk_level = predict_risk(features)
+        disease_result = predict_disease(features["symptoms"])
 
-        print(f"[AI] Prediction payload: {prediction}")
+        prediction = {
+            "risk_level": risk_level,
+            "disease_prediction": disease_result
+        }
 
         conn = get_connection()
         cur = conn.cursor()
@@ -32,13 +27,11 @@ def generate_and_store_prediction(consultation_id):
             WHERE consultation_id = %s
         """, (json.dumps(prediction), consultation_id))
 
-        print(f"[AI] Rows affected: {cur.rowcount}")
-
         conn.commit()
         cur.close()
         conn.close()
 
-        print(f"[AI] Prediction stored successfully")
+        print("[AI] Risk & Disease prediction stored successfully")
 
     except Exception as e:
         print(f"[AI ERROR] {e}")
