@@ -94,15 +94,39 @@ st.divider()
 # ==================================================
 # SYMPTOMS
 # ==================================================
-st.subheader("🤒 Symptoms")
+def get_symptom_names(symptom_ids: list[int]) -> list[str]:
+    if not symptom_ids:
+        return []
 
-if symptoms:
-    for s in symptoms:
-        st.write(f"- {s['symptom_name']} ({s['category']})")
+    conn = get_connection()
+    cur = conn.cursor()
+
+    placeholders = ",".join(["%s"] * len(symptom_ids))
+    query = f"""
+        SELECT symptom_name
+        FROM symptoms_master
+        WHERE symptom_id IN ({placeholders})
+        ORDER BY symptom_name
+    """
+
+    cur.execute(query, tuple(symptom_ids))
+    names = [row[0] for row in cur.fetchall()]
+
+    cur.close()
+    conn.close()
+    return names
+
+st.write("### 🤒 Symptoms")
+
+symptom_ids = list(st.session_state.chat_data.get("symptoms", []))
+symptom_names = get_symptom_names(symptom_ids)
+
+if symptom_names:
+    for s in symptom_names:
+        st.write(f"- {s}")
 else:
-    st.info("Patient reported no symptoms.")
+    st.info("No symptoms selected.")
 
-st.divider()
 
 # ==================================================
 # VITALS
