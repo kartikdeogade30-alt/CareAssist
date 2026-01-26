@@ -156,12 +156,18 @@ print(f"F1-score : {f1:.4f}")
 
 joblib.dump(best_model, MODEL_DIR / "disease_model.pkl")
 
+# Save symptom columns for inference
+joblib.dump(list(X.columns), MODEL_DIR / "symptom_columns.pkl")
+
+# Optional: keep human-readable version
 with open(MODEL_DIR / "symptoms.txt", "w") as f:
     for symptom in X.columns:
         f.write(symptom + "\n")
+
 
 print("\n✅ DISEASE MODEL TRAINED & SAVED SUCCESSFULLY")
 print("Saved files:")
 print(" - disease_model.pkl")
 print(" - label_encoder.pkl")
+print(" - symptom_columns.pkl")
 print(" - symptoms.txt")

@@ -176,24 +176,52 @@ else:
 st.divider()
 
 # -------------------------------------------------
-# AI RISK PREDICTION (ON DEMAND)
+# AI RISK & DISEASE PREDICTION
 # -------------------------------------------------
-st.subheader("🧠 AI Risk Prediction")
+st.subheader("🧠 AI Predictions")
 
 if consultation["prediction_json"]:
     prediction = json.loads(consultation["prediction_json"])
+
+    # -------- Risk --------
     risk = prediction.get("risk_level", "UNKNOWN")
 
     if risk == "HIGH":
         st.error("🚨 High Risk Patient")
     elif risk == "LOW":
         st.success("✅ Low Risk Patient")
+    elif risk == "NOT_AVAILABLE":
+        st.info("ℹ️ Risk prediction not available")
     else:
         st.warning("⚠️ Risk unavailable")
+
+    st.divider()
+
+    # -------- Disease --------
+    disease_data = prediction.get("disease_prediction")
+
+    if disease_data:
+        st.subheader("🧬 Disease Prediction")
+
+        st.write(
+            f"**Primary Prediction:** 🩺 "
+            f"{disease_data.get('primary_disease')}"
+        )
+
+        st.write("**Top Possible Diseases:**")
+        for d in disease_data.get("predictions", []):
+            st.write(
+                f"- {d['disease']} "
+                f"({round(d['confidence'] * 100, 2)}%)"
+            )
+    else:
+        st.info("Disease prediction not available.")
+
 else:
     st.info("AI prediction not generated yet.")
-    if status == "PENDING" and st.button("🧠 Generate AI Risk Prediction"):
-        with st.spinner("Running AI model..."):
+
+    if status == "PENDING" and st.button("🧠 Generate AI Prediction"):
+        with st.spinner("Running AI models..."):
             generate_and_store_prediction(consultation_id)
         st.success("AI prediction generated.")
         st.rerun()
@@ -205,13 +233,16 @@ st.divider()
 # -------------------------------------------------
 st.subheader("🩺 Doctor Remarks")
 
+doctor_remarks = ""
+
 if status == "REVIEWED":
     st.write(consultation["doctor_remarks"] or "No remarks added.")
 else:
     doctor_remarks = st.text_area(
         "Enter diagnosis / notes",
         value=consultation["doctor_remarks"] or "",
-        height=160
+        height=160,
+        placeholder="Enter diagnosis, treatment advice, or clinical notes"
     )
 
 st.divider()
@@ -224,7 +255,7 @@ col1, col2, col3 = st.columns(3)
 with col1:
     if status == "PENDING":
         if st.button("✅ Submit Review"):
-            if not doctor_remarks.strip():
+            if not doctor_remarks or not doctor_remarks.strip():
                 st.error("Doctor remarks are mandatory.")
             else:
                 submit_review(consultation_id, doctor_remarks)
