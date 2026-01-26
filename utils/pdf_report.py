@@ -1,124 +1,102 @@
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Paragraph,
-    Spacer,
-    Table,
-    TableStyle
-)
-from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
+from reportlab.lib.styles import getSampleStyleSheet
 from io import BytesIO
 
 
-def generate_consultation_pdf(data: dict) -> bytes:
-    """
-    Generates a consultation PDF and returns bytes.
-    """
+def safe(value, suffix=""):
+    if value in (None, "", "—"):
+        return "—"
+    return f"{value}{suffix}"
 
+
+def generate_consultation_pdf(data: dict) -> bytes:
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
-
     styles = getSampleStyleSheet()
-    elements = []
+    story = []
 
     # -------------------------------------------------
     # TITLE
     # -------------------------------------------------
-    elements.append(Paragraph(
-        "<b>CAREASSIST – CONSULTATION REPORT</b>",
-        styles["Title"]
-    ))
-    elements.append(Spacer(1, 12))
+    story.append(Paragraph("CAREASSIST – CONSULTATION REPORT", styles["Title"]))
+    story.append(Spacer(1, 14))
 
     # -------------------------------------------------
     # PATIENT DETAILS
     # -------------------------------------------------
-    patient_table = Table([
-        ["Patient Name", data["patient_name"]],
-        ["Gender", data["gender"]],
-        ["Date of Birth", data["dob"]],
-        ["Consultation ID", str(data["consultation_id"])],
-        ["Consultation Date", data["date"]],
-    ])
+    story.append(Paragraph("Patient Details", styles["Heading2"]))
+    story.append(Paragraph(f"Name: {safe(data.get('patient_name'))}", styles["Normal"]))
+    story.append(Paragraph(f"Gender: {safe(data.get('gender'))}", styles["Normal"]))
+    story.append(Paragraph(f"DOB: {safe(data.get('dob'))}", styles["Normal"]))
+    story.append(Spacer(1, 12))
 
-    patient_table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
-    ]))
-
-    elements.append(Paragraph("<b>Patient Information</b>", styles["Heading2"]))
-    elements.append(patient_table)
-    elements.append(Spacer(1, 12))
+    # -------------------------------------------------
+    # DOCTOR DETAILS
+    # -------------------------------------------------
+    story.append(Paragraph("Doctor Details", styles["Heading2"]))
+    story.append(
+        Paragraph(
+            f"Consulting Doctor: {safe(data.get('doctor_name'))}",
+            styles["Normal"]
+        )
+    )
+    story.append(Spacer(1, 12))
 
     # -------------------------------------------------
     # CHIEF COMPLAINT
     # -------------------------------------------------
-    elements.append(Paragraph("<b>Chief Complaint</b>", styles["Heading2"]))
-    elements.append(Paragraph(data["chief_complaint"], styles["Normal"]))
-    elements.append(Spacer(1, 12))
+    story.append(Paragraph("Chief Complaint", styles["Heading2"]))
+    story.append(Paragraph(safe(data.get("chief_complaint")), styles["Normal"]))
+    story.append(Spacer(1, 12))
 
     # -------------------------------------------------
     # VITALS
     # -------------------------------------------------
+    story.append(Paragraph("Vitals", styles["Heading2"]))
+
+    vitals = data.get("vitals", {})
+
     vitals_table = Table([
-        ["Height (cm)", data["vitals"]["height"]],
-        ["Weight (kg)", data["vitals"]["weight"]],
-        ["Temperature (°C)", data["vitals"]["temperature"]],
-        ["Blood Pressure", data["vitals"]["bp"]],
-        ["Heart Rate", data["vitals"]["heart_rate"]],
-        ["SpO₂ (%)", data["vitals"]["spo2"]],
+        ["Height (cm)", safe(vitals.get("height"))],
+        ["Weight (kg)", safe(vitals.get("weight"))],
+        ["Temperature (°C)", safe(vitals.get("temperature"))],
+        ["Blood Pressure", safe(vitals.get("bp"))],
+        ["Heart Rate", safe(vitals.get("heart_rate"))],
+        ["SpO₂ (%)", safe(vitals.get("spo2"))],
     ])
 
-    vitals_table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-    ]))
-
-    elements.append(Paragraph("<b>Vitals</b>", styles["Heading2"]))
-    elements.append(vitals_table)
-    elements.append(Spacer(1, 12))
+    story.append(vitals_table)
+    story.append(Spacer(1, 12))
 
     # -------------------------------------------------
     # SYMPTOMS
     # -------------------------------------------------
-    elements.append(Paragraph("<b>Symptoms</b>", styles["Heading2"]))
+    story.append(Paragraph("Symptoms", styles["Heading2"]))
+    symptoms = data.get("symptoms", [])
 
-    if data["symptoms"]:
-        for s in data["symptoms"]:
-            elements.append(Paragraph(f"- {s}", styles["Normal"]))
+    if symptoms:
+        for s in symptoms:
+            story.append(Paragraph(f"- {s}", styles["Normal"]))
     else:
-        elements.append(Paragraph("No symptoms reported.", styles["Italic"]))
+        story.append(Paragraph("No symptoms reported.", styles["Normal"]))
 
-    elements.append(Spacer(1, 12))
+    story.append(Spacer(1, 12))
 
     # -------------------------------------------------
-    # AI RISK
+    # AI PREDICTION
     # -------------------------------------------------
-    elements.append(Paragraph("<b>AI Risk Assessment</b>", styles["Heading2"]))
-    elements.append(Paragraph(
-        data["risk_prediction"],
-        styles["Normal"]
-    ))
-
-    elements.append(Spacer(1, 12))
+    story.append(Paragraph("AI Risk Prediction", styles["Heading2"]))
+    story.append(Paragraph(safe(data.get("risk_prediction")), styles["Normal"]))
+    story.append(Spacer(1, 12))
 
     # -------------------------------------------------
     # DOCTOR REMARKS
     # -------------------------------------------------
-    elements.append(Paragraph("<b>Doctor Remarks</b>", styles["Heading2"]))
-    elements.append(Paragraph(data["doctor_remarks"], styles["Normal"]))
+    story.append(Paragraph("Doctor Remarks", styles["Heading2"]))
+    story.append(Paragraph(safe(data.get("doctor_remarks")), styles["Normal"]))
 
-    elements.append(Spacer(1, 20))
-
-    # -------------------------------------------------
-    # FOOTER
-    # -------------------------------------------------
-    elements.append(Paragraph(
-        "<i>This report is generated for clinical reference only.</i>",
-        styles["Italic"]
-    ))
-
-    doc.build(elements)
-    buffer.seek(0)
-
-    return buffer.read()
+    doc.build(story)
+    pdf = buffer.getvalue()
+    buffer.close()
+    return pdf
