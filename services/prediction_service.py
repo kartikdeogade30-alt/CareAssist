@@ -10,12 +10,48 @@ def generate_and_store_prediction(consultation_id):
     try:
         features = build_features(consultation_id)
 
-        risk_level = predict_risk(features)
-        disease_result = predict_disease(features["symptoms"])
+        # -------------------------------
+        # VITALS RISK MODEL
+        # -------------------------------
+        try:
+            risk_level = predict_risk(features)
+            vitals_risk = {
+                "status": "AVAILABLE",
+                "risk_level": risk_level
+            }
+        except Exception as e:
+            print(f"[AI] Vitals risk unavailable: {e}")
+            vitals_risk = {
+                "status": "NOT_AVAILABLE"
+            }
 
+        # -------------------------------
+        # DISEASE PREDICTION MODEL
+        # -------------------------------
+        try:
+            if features.get("symptoms"):
+                disease_result = predict_disease(features["symptoms"])
+                disease_prediction = {
+                    "status": "AVAILABLE",
+                    "primary_disease": disease_result.get("primary_disease"),
+                    "predictions": disease_result.get("predictions", [])
+                }
+            else:
+                disease_prediction = {
+                    "status": "NOT_AVAILABLE"
+                }
+        except Exception as e:
+            print(f"[AI] Disease prediction unavailable: {e}")
+            disease_prediction = {
+                "status": "NOT_AVAILABLE"
+            }
+
+        # -------------------------------
+        # FINAL PREDICTION JSON
+        # -------------------------------
         prediction = {
-            "risk_level": risk_level,
-            "disease_prediction": disease_result
+            "vitals_risk": vitals_risk,
+            "disease_prediction": disease_prediction
         }
 
         conn = get_connection()
@@ -31,7 +67,7 @@ def generate_and_store_prediction(consultation_id):
         cur.close()
         conn.close()
 
-        print("[AI] Risk & Disease prediction stored successfully")
+        print("[AI] Prediction JSON stored successfully")
 
     except Exception as e:
         print(f"[AI ERROR] {e}")
