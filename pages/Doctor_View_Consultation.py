@@ -91,13 +91,14 @@ def submit_review(cid, remarks):
     cur = conn.cursor()
     cur.execute("""
         UPDATE consultations
-        SET doctor_id=%s, doctor_remarks=%s, status='REVIEWED'
+        SET doctor_id=%s,
+            doctor_remarks=%s,
+            status='REVIEWED'
         WHERE consultation_id=%s
     """, (doctor_id, remarks, cid))
     conn.commit()
     cur.close()
     conn.close()
-
 
 # -------------------------------------------------
 # FETCH DATA
@@ -116,7 +117,6 @@ st.write(f"Gender: {consultation['gender']}")
 st.write(f"DOB: {consultation['date_of_birth']}")
 
 st.divider()
-
 st.subheader("📌 Chief Complaint")
 st.write(consultation["chief_complaint"])
 
@@ -125,7 +125,6 @@ st.write(consultation["chief_complaint"])
 # -------------------------------------------------
 st.divider()
 st.subheader("😷 Symptoms")
-
 if symptoms:
     for s in symptoms:
         st.write(f"- {s['symptom_name']} ({s['category']})")
@@ -137,55 +136,67 @@ else:
 # -------------------------------------------------
 st.divider()
 st.subheader("❤️ Vitals")
-
 if vitals:
     col1, col2, col3 = st.columns(3)
-
     with col1:
-        st.write(f"**Height:** {vitals['height_cm']} cm")
-        st.write(f"**Weight:** {vitals['weight_kg']} kg")
-
+        st.write(f"Height: {vitals['height_cm']} cm")
+        st.write(f"Weight: {vitals['weight_kg']} kg")
     with col2:
-        st.write(f"**Temperature:** {vitals['temperature_c']} °F")
-        st.write(f"**Heart Rate:** {vitals['heart_rate']} bpm")
-
+        st.write(f"Temperature: {vitals['temperature_c']} °F")
+        st.write(f"Heart Rate: {vitals['heart_rate']} bpm")
     with col3:
-        st.write(f"**Blood Pressure:** {vitals['systolic_bp']}/{vitals['diastolic_bp']} mmHg")
-        st.write(f"**SpO₂:** {vitals['spO2']} %")
+        st.write(f"BP: {vitals['systolic_bp']}/{vitals['diastolic_bp']} mmHg")
+        st.write(f"SpO2: {vitals['spO2']} %")
 else:
     st.info("Vitals not available.")
 
 # -------------------------------------------------
-# AI PREDICTIONS
+# AI PREDICTIONS (SAFE, ONE-TIME)
 # -------------------------------------------------
 st.divider()
 st.subheader("🧠 AI Predictions")
 
+# Generate ONLY if missing (original stable behavior)
 if not consultation["prediction_json"]:
-    st.info("AI predictions not generated yet.")
-    if st.button("🧠 Generate AI Prediction"):
-        generate_and_store_prediction(consultation_id)
-        st.rerun()
-else:
-    prediction = json.loads(consultation["prediction_json"])
+    st.info("AI prediction not generated yet.")
+    generate_and_store_prediction(consultation_id)
+    st.rerun()
 
-    # ---- Vitals Risk ----
-    st.subheader("📈 Vitals Risk Prediction")
-    vr = prediction.get("vitals_risk", {})
+pred = json.loads(consultation["prediction_json"])
+
+# ---------- VITALS RISK ----------
+st.subheader("📈 Vitals Risk Prediction")
+
+if "vitals_risk" in pred:
+    vr = pred["vitals_risk"]
     if vr.get("status") == "AVAILABLE":
-        st.success(f"Risk Level: {vr['risk_level']}")
+        st.success(f"Risk Level: {vr.get('risk_level')}")
     else:
         st.warning("Vitals risk not available.")
+elif "risk_level" in pred:  # OLD FORMAT
+    st.success(f"Risk Level: {pred['risk_level']}")
+else:
+    st.warning("Vitals risk not available.")
 
-    # ---- Disease Prediction ----
-    st.subheader("🧬 Disease Prediction")
-    dp = prediction.get("disease_prediction", {})
-    if dp.get("status") == "AVAILABLE":
-        st.write(f"Primary Disease: {dp['primary_disease']}")
-        for d in dp.get("predictions", []):
-            st.write(f"- {d['disease']} ({d['confidence']*100:.2f}%)")
-    else:
-        st.warning("Disease prediction not available.")
+# ---------- DISEASE PREDICTION ----------
+st.subheader("🧬 Disease Prediction")
+
+dp = pred.get("disease_prediction")
+
+# NEW FORMAT
+if isinstance(dp, dict) and dp.get("status") == "AVAILABLE":
+    st.write(f"Primary Disease: {dp.get('primary_disease')}")
+    for d in dp.get("predictions", []):
+        st.write(f"- {d['disease']} ({d['confidence']*100:.2f}%)")
+
+# OLD FORMAT (NO STATUS KEY)
+elif isinstance(dp, dict) and "primary_disease" in dp:
+    st.write(f"Primary Disease: {dp.get('primary_disease')}")
+    for d in dp.get("predictions", []):
+        st.write(f"- {d['disease']} ({d['confidence']*100:.2f}%)")
+
+else:
+    st.warning("Disease prediction not available.")
 
 # -------------------------------------------------
 # DOCTOR REMARKS
@@ -210,9 +221,10 @@ else:
 col1, col2 = st.columns(2)
 
 with col1:
-    if status == "PENDING" and st.button("✅ Submit Review"):
-        submit_review(consultation_id, doctor_remarks)
-        st.switch_page("pages/Doctor.py")
+    if status == "PENDING":
+        if st.button("✅ Submit Review"):
+            submit_review(consultation_id, doctor_remarks)
+            st.switch_page("pages/Doctor.py")
 
 with col2:
     if status == "REVIEWED":
@@ -231,7 +243,7 @@ with col2:
                 "spo2": vitals["spO2"] if vitals else None,
             },
             "symptoms": [f"{s['symptom_name']} ({s['category']})" for s in symptoms],
-            "risk_prediction": prediction,
+            "risk_prediction": pred,
             "doctor_remarks": consultation["doctor_remarks"],
         })
 
