@@ -1,212 +1,141 @@
 import streamlit as st
+import json
 from database.db_connection import get_connection
+from utils.pdf_report import generate_consultation_pdf
 
-# ==================================================
-# SAFETY CHECK
-# ==================================================
+# ---- Navigation ----
+if st.button("⬅ Back to Patient Dashboard"):
+    st.switch_page("pages/Patient.py")
+
+# ---- Guard ----
 if "view_consultation_id" not in st.session_state:
-    st.error("No consultation selected.")
     st.stop()
 
-consultation_id = st.session_state.view_consultation_id
+cid = st.session_state.view_consultation_id
 
-st.title("📄 Consultation Details")
-st.caption(f"Consultation ID: {consultation_id}")
-
-# ==================================================
-# DATABASE CONNECTION
-# ==================================================
+# ---- DB Fetch ----
 conn = get_connection()
+cur = conn.cursor(dictionary=True)
 
-# ==================================================
-# FETCH CONSULTATION
-# ==================================================
-cur0 = conn.cursor(dictionary=True)
-cur0.execute("""
+cur.execute("""
     SELECT
-        consultation_id,
-        chief_complaint,
-        doctor_remarks,
-        status,
-        created_at
-    FROM consultations
-    WHERE consultation_id = %s
-""", (consultation_id,))
-consultation = cur0.fetchone()
-cur0.close()
+        c.consultation_id,
+        c.chief_complaint,
+        c.doctor_remarks,
+        c.prediction_json,
+        c.created_at,
+        p.full_name AS patient_name,
+        p.gender,
+        p.date_of_birth,
+        d.full_name AS doctor_name
+    FROM consultations c
+    JOIN patients p ON p.patient_id = c.patient_id
+    LEFT JOIN doctors d ON d.doctor_id = c.doctor_id
+    WHERE c.consultation_id = %s
+""", (cid,))
+consultation = cur.fetchone()
 
-# ==================================================
-# FETCH VITALS
-# ==================================================
-cur1 = conn.cursor(dictionary=True)
-cur1.execute("""
-    SELECT *
-    FROM patient_vitals
-    WHERE consultation_id = %s
-""", (consultation_id,))
-vitals_rows = cur1.fetchall()
-cur1.close()
-vitals = vitals_rows[0] if vitals_rows else None
+cur.execute("SELECT * FROM patient_vitals WHERE consultation_id=%s", (cid,))
+vitals = cur.fetchone()
 
-# ==================================================
-# FETCH SYMPTOMS
-# ==================================================
-cur2 = conn.cursor(dictionary=True)
-cur2.execute("""
-    SELECT
-        sm.symptom_name,
-        sm.category
+cur.execute("""
+    SELECT sm.symptom_name, sm.category
     FROM consultation_symptoms cs
-    JOIN symptoms_master sm
-        ON cs.symptom_id = sm.symptom_id
+    JOIN symptoms_master sm ON sm.symptom_id = cs.symptom_id
     WHERE cs.consultation_id = %s
-    ORDER BY sm.category, sm.symptom_name
-""", (consultation_id,))
-symptoms = cur2.fetchall()
-cur2.close()
+""", (cid,))
+symptoms = cur.fetchall()
 
+cur.close()
 conn.close()
 
-# ==================================================
-# STATUS BANNER
-# ==================================================
-status = consultation["status"]
+prediction = json.loads(consultation["prediction_json"]) if consultation["prediction_json"] else {}
 
-if status == "PENDING":
-    st.warning("⏳ Consultation is under doctor review.")
-elif status == "REVIEWED":
-    st.success("✅ Consultation reviewed by doctor.")
+# ---- UI ----
+st.title("📄 Consultation Report")
 
-st.divider()
-
-# ==================================================
-# CHIEF COMPLAINT
-# ==================================================
-st.subheader("📝 Chief Complaint")
-
-if consultation.get("chief_complaint"):
-    st.write(consultation["chief_complaint"])
-else:
-    st.info("No chief complaint recorded.")
+st.markdown("### 🧑 Patient Details")
+st.write(f"**Name:** {consultation['patient_name']}")
+st.write(f"**Gender:** {consultation['gender']}")
+st.write(f"**Date of Birth:** {consultation['date_of_birth']}")
 
 st.divider()
 
-# ==================================================
-# SYMPTOMS
-# ==================================================
-def get_symptom_names(symptom_ids: list[int]) -> list[str]:
-    if not symptom_ids:
-        return []
+st.markdown("### 👨‍⚕️ Doctor")
+st.write(consultation["doctor_name"] or "— Not Assigned —")
 
-    conn = get_connection()
-    cur = conn.cursor()
+st.divider()
 
-    placeholders = ",".join(["%s"] * len(symptom_ids))
-    query = f"""
-        SELECT symptom_name
-        FROM symptoms_master
-        WHERE symptom_id IN ({placeholders})
-        ORDER BY symptom_name
-    """
+st.markdown("### 📝 Chief Complaint")
+st.write(consultation["chief_complaint"])
 
-    cur.execute(query, tuple(symptom_ids))
-    names = [row[0] for row in cur.fetchall()]
+st.divider()
 
-    cur.close()
-    conn.close()
-    return names
-
-st.write("### 🤒 Symptoms")
-
-symptom_ids = list(st.session_state.chat_data.get("symptoms", []))
-symptom_names = get_symptom_names(symptom_ids)
-
-if symptom_names:
-    for s in symptom_names:
-        st.write(f"- {s}")
-else:
-    st.info("No symptoms selected.")
-
-
-# ==================================================
-# VITALS
-# ==================================================
-st.subheader("❤️ Vitals")
-
+st.markdown("### ❤️ Vitals")
 if vitals:
-    st.json({
-        "Height (cm)": float(vitals["height_cm"]) if vitals["height_cm"] else None,
-        "Weight (kg)": float(vitals["weight_kg"]) if vitals["weight_kg"] else None,
-        "Temperature (°C)": float(vitals["temperature_c"]) if vitals["temperature_c"] else None,
-        "Blood Pressure": f"{vitals['systolic_bp']}/{vitals['diastolic_bp']}",
-        "Blood Sugar": vitals["blood_sugar"],
-        "Heart Rate": vitals["heart_rate"],
-        "SpO₂": vitals["spO2"]
-    })
+    col1, col2, col3 = st.columns(3)
+    col1.write(f"**Height:** {vitals['height_cm']} cm")
+    col1.write(f"**Weight:** {vitals['weight_kg']} kg")
+
+    col2.write(f"**Temperature:** {vitals['temperature_c']} °C")
+    col2.write(f"**Heart Rate:** {vitals['heart_rate']} bpm")
+
+    col3.write(f"**Blood Pressure:** {vitals['systolic_bp']}/{vitals['diastolic_bp']} mmHg")
+    col3.write(f"**SpO₂:** {vitals['spO2']} %")
 else:
     st.info("No vitals recorded.")
 
 st.divider()
 
-# ==================================================
-# DOCTOR REMARKS
-# ==================================================
-st.subheader("🩺 Doctor Remarks")
-
-if consultation.get("doctor_remarks"):
-    st.write(consultation["doctor_remarks"])
+st.markdown("### 🤒 Symptoms")
+if symptoms:
+    for s in symptoms:
+        st.write(f"- {s['symptom_name']} ({s['category']})")
 else:
-    st.info("Doctor has not added remarks yet.")
+    st.write("No symptoms reported.")
 
 st.divider()
 
-# ==================================================
-# DOWNLOAD (ONLY IF REVIEWED)
-# ==================================================
-if status == "REVIEWED":
-    st.subheader("📥 Download Consultation Report")
+st.markdown("### 🤖 AI Prediction")
+risk = prediction.get("risk_level", "NOT_AVAILABLE")
+st.write(f"**Risk Level:** {risk}")
 
-    report_text = f"""
-CAREASSIST – CONSULTATION REPORT
---------------------------------
-Consultation ID : {consultation_id}
-Date            : {consultation['created_at'].strftime('%Y-%m-%d %H:%M')}
-
-CHIEF COMPLAINT
-{consultation.get('chief_complaint') or 'N/A'}
-
-SYMPTOMS
-{', '.join([s['symptom_name'] for s in symptoms]) if symptoms else 'None'}
-
-VITALS
-Height        : {vitals['height_cm']} cm
-Weight        : {vitals['weight_kg']} kg
-Temperature   : {vitals['temperature_c']} °C
-Blood Pressure: {vitals['systolic_bp']}/{vitals['diastolic_bp']}
-Heart Rate    : {vitals['heart_rate']}
-SpO₂          : {vitals['spO2']} %
-
-DOCTOR REMARKS
-{consultation.get('doctor_remarks')}
-
---------------------------------
-Generated by CareAssist
-"""
-
-    st.download_button(
-        label="⬇ Download Report",
-        data=report_text,
-        file_name=f"consultation_{consultation_id}.txt",
-        mime="text/plain"
-    )
-else:
-    st.info("Consultation report will be available after doctor review.")
+disease_pred = prediction.get("disease_prediction")
+if disease_pred:
+    st.write(f"**Primary Disease:** {disease_pred['primary_disease']}")
+    st.write("**Top Predictions:**")
+    for p in disease_pred["predictions"]:
+        st.write(f"- {p['disease']} ({p['confidence']:.2f})")
 
 st.divider()
 
-# ==================================================
-# NAVIGATION
-# ==================================================
-if st.button("⬅ Back to Dashboard"):
-    del st.session_state.view_consultation_id
-    st.switch_page("pages/Patient.py")
+st.markdown("### 🩺 Doctor Remarks")
+st.write(consultation["doctor_remarks"] or "No remarks added.")
+
+# ---- PDF Generation ----
+st.divider()
+
+pdf_data = generate_consultation_pdf({
+    "patient_name": consultation["patient_name"],
+    "gender": consultation["gender"],
+    "dob": consultation["date_of_birth"],
+    "doctor_name": consultation["doctor_name"],
+    "chief_complaint": consultation["chief_complaint"],
+    "vitals": {
+        "height": vitals["height_cm"] if vitals else None,
+        "weight": vitals["weight_kg"] if vitals else None,
+        "temperature": vitals["temperature_c"] if vitals else None,
+        "bp": f"{vitals['systolic_bp']}/{vitals['diastolic_bp']}" if vitals else None,
+        "heart_rate": vitals["heart_rate"] if vitals else None,
+        "spo2": vitals["spO2"] if vitals else None,
+    },
+    "symptoms": [f"{s['symptom_name']} ({s['category']})" for s in symptoms],
+    "risk_prediction": risk,
+    "doctor_remarks": consultation["doctor_remarks"],
+})
+
+st.download_button(
+    "⬇ Download Consultation Report (PDF)",
+    pdf_data,
+    file_name=f"consultation_{cid}.pdf"
+)
