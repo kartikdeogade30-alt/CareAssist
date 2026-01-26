@@ -63,7 +63,7 @@ def generate_consultation_pdf(data: dict) -> bytes:
         ["Temperature (°C)", safe(vitals.get("temperature"))],
         ["Blood Pressure", safe(vitals.get("bp"))],
         ["Heart Rate", safe(vitals.get("heart_rate"))],
-        ["SpO₂ (%)", safe(vitals.get("spo2"))],
+        ["SpO2 (%)", safe(vitals.get("spo2"))],
     ])
 
     story.append(vitals_table)
