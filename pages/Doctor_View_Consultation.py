@@ -37,7 +37,6 @@ st.title("📝 Consultation Details")
 def get_consultation(cid):
     conn = get_connection()
     cur = conn.cursor(dictionary=True)
-
     cur.execute("""
         SELECT
             c.consultation_id,
@@ -56,7 +55,6 @@ def get_consultation(cid):
         LEFT JOIN doctors d ON d.doctor_id = c.doctor_id
         WHERE c.consultation_id = %s
     """, (cid,))
-
     row = cur.fetchone()
     cur.close()
     conn.close()
@@ -110,7 +108,7 @@ symptoms = get_symptoms(consultation_id)
 status = consultation["status"]
 
 # -------------------------------------------------
-# DISPLAY BASIC INFO
+# BASIC INFO
 # -------------------------------------------------
 st.subheader("👤 Patient Information")
 st.write(f"Name: {consultation['patient_name']}")
@@ -122,22 +120,22 @@ st.divider()
 st.subheader("📌 Chief Complaint")
 st.write(consultation["chief_complaint"])
 
-st.divider()
 # -------------------------------------------------
 # SYMPTOMS
 # -------------------------------------------------
+st.divider()
 st.subheader("😷 Symptoms")
 
 if symptoms:
     for s in symptoms:
         st.write(f"- {s['symptom_name']} ({s['category']})")
 else:
-    st.write("No symptoms reported.")
-st.divider()
+    st.info("No symptoms reported.")
 
 # -------------------------------------------------
 # VITALS
 # -------------------------------------------------
+st.divider()
 st.subheader("❤️ Vitals")
 
 if vitals:
@@ -156,39 +154,43 @@ if vitals:
         st.write(f"**SpO₂:** {vitals['spO2']} %")
 else:
     st.info("Vitals not available.")
-st.divider()
+
 # -------------------------------------------------
 # AI PREDICTIONS
 # -------------------------------------------------
+st.divider()
 st.subheader("🧠 AI Predictions")
 
-if consultation["prediction_json"]:
-    prediction = json.loads(consultation["prediction_json"])
-
-    # Risk
-    st.subheader("📈 Vitals Risk Prediction")
-    st.write(prediction.get("risk_level", "Not available"))
-
-    # Disease
-    disease = prediction.get("disease_prediction")
-    st.subheader("🧬 Disease Prediction")
-    if disease:
-        st.write(f"Primary: {disease['primary_disease']}")
-        for d in disease["predictions"]:
-            st.write(f"- {d['disease']} ({d['confidence']*100:.2f}%)")
-    else:
-        st.info("Disease prediction not available")
-
-else:
+if not consultation["prediction_json"]:
+    st.info("AI predictions not generated yet.")
     if st.button("🧠 Generate AI Prediction"):
         generate_and_store_prediction(consultation_id)
         st.rerun()
+else:
+    prediction = json.loads(consultation["prediction_json"])
 
-st.divider()
+    # ---- Vitals Risk ----
+    st.subheader("📈 Vitals Risk Prediction")
+    vr = prediction.get("vitals_risk", {})
+    if vr.get("status") == "AVAILABLE":
+        st.success(f"Risk Level: {vr['risk_level']}")
+    else:
+        st.warning("Vitals risk not available.")
+
+    # ---- Disease Prediction ----
+    st.subheader("🧬 Disease Prediction")
+    dp = prediction.get("disease_prediction", {})
+    if dp.get("status") == "AVAILABLE":
+        st.write(f"Primary Disease: {dp['primary_disease']}")
+        for d in dp.get("predictions", []):
+            st.write(f"- {d['disease']} ({d['confidence']*100:.2f}%)")
+    else:
+        st.warning("Disease prediction not available.")
 
 # -------------------------------------------------
 # DOCTOR REMARKS
 # -------------------------------------------------
+st.divider()
 st.subheader("🩺 Doctor Remarks")
 
 doctor_remarks = consultation["doctor_remarks"] or ""
@@ -202,17 +204,15 @@ else:
         height=150
     )
 
-
 # -------------------------------------------------
 # ACTIONS
 # -------------------------------------------------
 col1, col2 = st.columns(2)
 
 with col1:
-    if status == "PENDING":
-        if st.button("✅ Submit Review"):
-            submit_review(consultation_id, doctor_remarks)
-            st.switch_page("pages/Doctor.py")
+    if status == "PENDING" and st.button("✅ Submit Review"):
+        submit_review(consultation_id, doctor_remarks)
+        st.switch_page("pages/Doctor.py")
 
 with col2:
     if status == "REVIEWED":
@@ -225,14 +225,18 @@ with col2:
             "vitals": {
                 "height": vitals["height_cm"] if vitals else None,
                 "weight": vitals["weight_kg"] if vitals else None,
-                "temperature": vitals["temperature_c"] if vitals else None,
+                "temperature": f"{vitals['temperature_c']} °F" if vitals else None,
                 "bp": f"{vitals['systolic_bp']}/{vitals['diastolic_bp']}" if vitals else None,
                 "heart_rate": vitals["heart_rate"] if vitals else None,
                 "spo2": vitals["spO2"] if vitals else None,
             },
             "symptoms": [f"{s['symptom_name']} ({s['category']})" for s in symptoms],
-            "risk_prediction": json.loads(consultation["prediction_json"]).get("risk_level"),
+            "risk_prediction": prediction,
             "doctor_remarks": consultation["doctor_remarks"],
         })
 
-        st.download_button("⬇ Download PDF", pdf, file_name=f"consultation_{consultation_id}.pdf")
+        st.download_button(
+            "⬇ Download PDF",
+            pdf,
+            file_name=f"consultation_{consultation_id}.pdf"
+        )
