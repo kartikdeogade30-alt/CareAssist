@@ -93,7 +93,6 @@ st.write(f"Gender: {consultation['gender']}")
 st.write(f"DOB: {consultation['date_of_birth']}")
 
 st.divider()
-
 st.subheader("📌 Chief Complaint")
 st.write(consultation["chief_complaint"])
 
@@ -133,7 +132,7 @@ else:
     st.info("Vitals not available.")
 
 # -------------------------------------------------
-# AI PREDICTIONS (STRICTLY AFTER REVIEW)
+# AI INSIGHTS (AFTER REVIEW ONLY)
 # -------------------------------------------------
 st.divider()
 st.subheader("🤖 AI Insights")
@@ -143,23 +142,37 @@ if consultation["status"] != "REVIEWED":
 else:
     prediction = json.loads(consultation["prediction_json"]) if consultation["prediction_json"] else {}
 
-    # ---- Vitals Risk ----
+    # ---------- HEALTH RISK ----------
     st.subheader("📈 Health Risk")
 
-    vr = prediction.get("vitals_risk", {})
-    if vr.get("status") == "AVAILABLE":
-        st.write(f"Risk Level: **{vr['risk_level']}**")
+    if "vitals_risk" in prediction:                     # NEW FORMAT
+        vr = prediction["vitals_risk"]
+        if vr.get("status") == "AVAILABLE":
+            st.success(f"Risk Level: **{vr.get('risk_level')}**")
+        else:
+            st.info("Risk assessment not available.")
+    elif "risk_level" in prediction:                    # OLD FORMAT
+        st.success(f"Risk Level: **{prediction['risk_level']}**")
     else:
         st.info("Risk assessment not available.")
 
-    # ---- Disease Prediction ----
+    # ---------- DISEASE PREDICTION ----------
     st.subheader("🧬 Possible Conditions")
 
-    dp = prediction.get("disease_prediction", {})
-    if dp.get("status") == "AVAILABLE":
-        st.write(f"**Primary Condition:** {dp['primary_disease']}")
+    dp = prediction.get("disease_prediction")
+
+    # NEW FORMAT
+    if isinstance(dp, dict) and dp.get("status") == "AVAILABLE":
+        st.write(f"**Primary Condition:** {dp.get('primary_disease')}")
         for d in dp.get("predictions", []):
             st.write(f"- {d['disease']} ({d['confidence']*100:.2f}%)")
+
+    # OLD FORMAT
+    elif isinstance(dp, dict) and "primary_disease" in dp:
+        st.write(f"**Primary Condition:** {dp.get('primary_disease')}")
+        for d in dp.get("predictions", []):
+            st.write(f"- {d['disease']} ({d['confidence']*100:.2f}%)")
+
     else:
         st.info("Disease prediction not available.")
 
@@ -175,7 +188,7 @@ else:
     st.info("Doctor remarks will be available after review.")
 
 # -------------------------------------------------
-# PDF DOWNLOAD (ONLY AFTER REVIEW)
+# PDF DOWNLOAD
 # -------------------------------------------------
 st.divider()
 
