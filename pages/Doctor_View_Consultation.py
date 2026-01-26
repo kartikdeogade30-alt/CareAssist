@@ -5,6 +5,12 @@ from services.prediction_service import generate_and_store_prediction
 from utils.pdf_report import generate_consultation_pdf
 
 # -------------------------------------------------
+# NAVIGATION
+# -------------------------------------------------
+if st.button("⬅ Back to Doctor Dashboard"):
+    st.switch_page("pages/Doctor.py")
+
+# -------------------------------------------------
 # AUTH GUARD
 # -------------------------------------------------
 if (
@@ -41,11 +47,13 @@ def get_consultation(cid):
             c.prediction_json,
             c.status,
             c.created_at,
-            p.full_name,
+            p.full_name AS patient_name,
             p.gender,
-            p.date_of_birth
+            p.date_of_birth,
+            d.full_name AS doctor_name
         FROM consultations c
         JOIN patients p ON p.patient_id = c.patient_id
+        LEFT JOIN doctors d ON d.doctor_id = c.doctor_id
         WHERE c.consultation_id = %s
     """, (cid,))
 
@@ -58,13 +66,7 @@ def get_consultation(cid):
 def get_vitals(cid):
     conn = get_connection()
     cur = conn.cursor(dictionary=True)
-
-    cur.execute("""
-        SELECT *
-        FROM patient_vitals
-        WHERE consultation_id = %s
-    """, (cid,))
-
+    cur.execute("SELECT * FROM patient_vitals WHERE consultation_id = %s", (cid,))
     row = cur.fetchone()
     cur.close()
     conn.close()
@@ -74,15 +76,12 @@ def get_vitals(cid):
 def get_symptoms(cid):
     conn = get_connection()
     cur = conn.cursor(dictionary=True)
-
     cur.execute("""
         SELECT sm.symptom_name, sm.category
         FROM consultation_symptoms cs
-        JOIN symptoms_master sm
-            ON sm.symptom_id = cs.symptom_id
+        JOIN symptoms_master sm ON sm.symptom_id = cs.symptom_id
         WHERE cs.consultation_id = %s
     """, (cid,))
-
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -92,17 +91,11 @@ def get_symptoms(cid):
 def submit_review(cid, remarks):
     conn = get_connection()
     cur = conn.cursor()
-
     cur.execute("""
         UPDATE consultations
-        SET
-            doctor_id = %s,
-            doctor_remarks = %s,
-            status = 'REVIEWED'
-        WHERE consultation_id = %s
-          AND status = 'PENDING'
+        SET doctor_id=%s, doctor_remarks=%s, status='REVIEWED'
+        WHERE consultation_id=%s
     """, (doctor_id, remarks, cid))
-
     conn.commit()
     cur.close()
     conn.close()
@@ -114,116 +107,81 @@ def submit_review(cid, remarks):
 consultation = get_consultation(consultation_id)
 vitals = get_vitals(consultation_id)
 symptoms = get_symptoms(consultation_id)
-
 status = consultation["status"]
 
 # -------------------------------------------------
-# STATUS BANNER
-# -------------------------------------------------
-if status == "PENDING":
-    st.warning("⏳ Consultation pending review")
-else:
-    st.success("✅ Consultation reviewed (read-only)")
-
-st.divider()
-
-# -------------------------------------------------
-# PATIENT INFO
+# DISPLAY BASIC INFO
 # -------------------------------------------------
 st.subheader("👤 Patient Information")
-st.write(f"**Name:** {consultation['full_name']}")
-st.write(f"**Gender:** {consultation['gender']}")
-st.write(f"**DOB:** {consultation['date_of_birth']}")
+st.write(f"Name: {consultation['patient_name']}")
+st.write(f"Gender: {consultation['gender']}")
+st.write(f"DOB: {consultation['date_of_birth']}")
 
 st.divider()
 
-# -------------------------------------------------
-# CHIEF COMPLAINT
-# -------------------------------------------------
 st.subheader("📌 Chief Complaint")
-st.write(consultation["chief_complaint"] or "No complaint provided.")
+st.write(consultation["chief_complaint"])
 
 st.divider()
-
-# -------------------------------------------------
-# VITALS
-# -------------------------------------------------
-st.subheader("🧪 Vitals")
-
-if vitals:
-    st.write(f"Height: {vitals['height_cm']} cm")
-    st.write(f"Weight: {vitals['weight_kg']} kg")
-    st.write(f"Temperature: {vitals['temperature_c']} °C")
-    st.write(f"BP: {vitals['systolic_bp']}/{vitals['diastolic_bp']}")
-    st.write(f"Heart Rate: {vitals['heart_rate']}")
-    st.write(f"SpO₂: {vitals['spO2']}%")
-else:
-    st.info("No vitals recorded.")
-
-st.divider()
-
 # -------------------------------------------------
 # SYMPTOMS
 # -------------------------------------------------
-st.subheader("🤒 Symptoms")
+st.subheader("😷 Symptoms")
 
 if symptoms:
     for s in symptoms:
         st.write(f"- {s['symptom_name']} ({s['category']})")
 else:
-    st.info("No symptoms selected.")
-
+    st.write("No symptoms reported.")
 st.divider()
 
 # -------------------------------------------------
-# AI RISK & DISEASE PREDICTION
+# VITALS
+# -------------------------------------------------
+st.subheader("❤️ Vitals")
+
+if vitals:
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.write(f"**Height:** {vitals['height_cm']} cm")
+        st.write(f"**Weight:** {vitals['weight_kg']} kg")
+
+    with col2:
+        st.write(f"**Temperature:** {vitals['temperature_c']} °F")
+        st.write(f"**Heart Rate:** {vitals['heart_rate']} bpm")
+
+    with col3:
+        st.write(f"**Blood Pressure:** {vitals['systolic_bp']}/{vitals['diastolic_bp']} mmHg")
+        st.write(f"**SpO₂:** {vitals['spO2']} %")
+else:
+    st.info("Vitals not available.")
+st.divider()
+# -------------------------------------------------
+# AI PREDICTIONS
 # -------------------------------------------------
 st.subheader("🧠 AI Predictions")
 
 if consultation["prediction_json"]:
     prediction = json.loads(consultation["prediction_json"])
 
-    # -------- Risk --------
-    risk = prediction.get("risk_level", "UNKNOWN")
+    # Risk
+    st.subheader("📈 Vitals Risk Prediction")
+    st.write(prediction.get("risk_level", "Not available"))
 
-    if risk == "HIGH":
-        st.error("🚨 High Risk Patient")
-    elif risk == "LOW":
-        st.success("✅ Low Risk Patient")
-    elif risk == "NOT_AVAILABLE":
-        st.info("ℹ️ Risk prediction not available")
+    # Disease
+    disease = prediction.get("disease_prediction")
+    st.subheader("🧬 Disease Prediction")
+    if disease:
+        st.write(f"Primary: {disease['primary_disease']}")
+        for d in disease["predictions"]:
+            st.write(f"- {d['disease']} ({d['confidence']*100:.2f}%)")
     else:
-        st.warning("⚠️ Risk unavailable")
-
-    st.divider()
-
-    # -------- Disease --------
-    disease_data = prediction.get("disease_prediction")
-
-    if disease_data:
-        st.subheader("🧬 Disease Prediction")
-
-        st.write(
-            f"**Primary Prediction:** 🩺 "
-            f"{disease_data.get('primary_disease')}"
-        )
-
-        st.write("**Top Possible Diseases:**")
-        for d in disease_data.get("predictions", []):
-            st.write(
-                f"- {d['disease']} "
-                f"({round(d['confidence'] * 100, 2)}%)"
-            )
-    else:
-        st.info("Disease prediction not available.")
+        st.info("Disease prediction not available")
 
 else:
-    st.info("AI prediction not generated yet.")
-
-    if status == "PENDING" and st.button("🧠 Generate AI Prediction"):
-        with st.spinner("Running AI models..."):
-            generate_and_store_prediction(consultation_id)
-        st.success("AI prediction generated.")
+    if st.button("🧠 Generate AI Prediction"):
+        generate_and_store_prediction(consultation_id)
         st.rerun()
 
 st.divider()
@@ -233,74 +191,48 @@ st.divider()
 # -------------------------------------------------
 st.subheader("🩺 Doctor Remarks")
 
-doctor_remarks = ""
+doctor_remarks = consultation["doctor_remarks"] or ""
 
 if status == "REVIEWED":
-    st.write(consultation["doctor_remarks"] or "No remarks added.")
+    st.write(doctor_remarks if doctor_remarks else "— No remarks added —")
 else:
     doctor_remarks = st.text_area(
-        "Enter diagnosis / notes",
-        value=consultation["doctor_remarks"] or "",
-        height=160,
-        placeholder="Enter diagnosis, treatment advice, or clinical notes"
+        "Enter Doctor Remarks",
+        value=doctor_remarks,
+        height=150
     )
 
-st.divider()
 
 # -------------------------------------------------
 # ACTIONS
 # -------------------------------------------------
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
 with col1:
     if status == "PENDING":
         if st.button("✅ Submit Review"):
-            if not doctor_remarks or not doctor_remarks.strip():
-                st.error("Doctor remarks are mandatory.")
-            else:
-                submit_review(consultation_id, doctor_remarks)
-                st.success("Consultation reviewed.")
-                st.session_state.pop("review_consultation_id", None)
-                st.switch_page("pages/Doctor.py")
+            submit_review(consultation_id, doctor_remarks)
+            st.switch_page("pages/Doctor.py")
 
 with col2:
-    # PDF DOWNLOAD (ONLY AFTER REVIEWED)
     if status == "REVIEWED":
-        pdf_bytes = generate_consultation_pdf({
-            "consultation_id": consultation_id,
-            "patient_name": consultation["full_name"],
+        pdf = generate_consultation_pdf({
+            "patient_name": consultation["patient_name"],
             "gender": consultation["gender"],
-            "dob": str(consultation["date_of_birth"]),
-            "date": consultation["created_at"].strftime("%Y-%m-%d %H:%M"),
-            "chief_complaint": consultation["chief_complaint"] or "—",
+            "dob": consultation["date_of_birth"],
+            "doctor_name": consultation["doctor_name"],
+            "chief_complaint": consultation["chief_complaint"],
             "vitals": {
-                "height": vitals["height_cm"],
-                "weight": vitals["weight_kg"],
-                "temperature": vitals["temperature_c"],
-                "bp": f"{vitals['systolic_bp']}/{vitals['diastolic_bp']}",
-                "heart_rate": vitals["heart_rate"],
-                "spo2": vitals["spO2"],
+                "height": vitals["height_cm"] if vitals else None,
+                "weight": vitals["weight_kg"] if vitals else None,
+                "temperature": vitals["temperature_c"] if vitals else None,
+                "bp": f"{vitals['systolic_bp']}/{vitals['diastolic_bp']}" if vitals else None,
+                "heart_rate": vitals["heart_rate"] if vitals else None,
+                "spo2": vitals["spO2"] if vitals else None,
             },
-            "symptoms": [
-                f"{s['symptom_name']} ({s['category']})"
-                for s in symptoms
-            ],
-            "risk_prediction": (
-                json.loads(consultation["prediction_json"]).get("risk_level")
-                if consultation["prediction_json"]
-                else "Not available"
-            ),
-            "doctor_remarks": consultation["doctor_remarks"] or "—",
+            "symptoms": [f"{s['symptom_name']} ({s['category']})" for s in symptoms],
+            "risk_prediction": json.loads(consultation["prediction_json"]).get("risk_level"),
+            "doctor_remarks": consultation["doctor_remarks"],
         })
 
-        st.download_button(
-            "⬇ Download PDF Report",
-            pdf_bytes,
-            file_name=f"consultation_{consultation_id}.pdf",
-            mime="application/pdf"
-        )
-
-with col3:
-    if st.button("⬅ Back"):
-        st.session_state.pop("review_consultation_id", None)
-        st.switch_page("pages/Doctor.py")
+        st.download_button("⬇ Download PDF", pdf, file_name=f"consultation_{consultation_id}.pdf")
