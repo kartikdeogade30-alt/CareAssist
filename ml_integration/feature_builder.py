@@ -1,81 +1,82 @@
 from database.db_connection import get_connection
-from datetime import date
+
+# -------------------------------------------------
+# UTILITIES
+# -------------------------------------------------
+def fahrenheit_to_celsius(f):
+    return round((f - 32) * 5 / 9, 2)
+
+
 
 def build_features(consultation_id):
     conn = get_connection()
     cur = conn.cursor(dictionary=True)
 
-    # ---------------- Patient Info ----------------
-    cur.execute("""
-        SELECT p.date_of_birth, p.gender
-        FROM consultations c
-        JOIN patients p ON p.patient_id = c.patient_id
-        WHERE c.consultation_id = %s
-    """, (consultation_id,))
-    patient = cur.fetchone()
+    try:
+        # -------------------------------
+        # VITALS
+        # -------------------------------
+        cur.execute("""
+            SELECT
+                height_cm,
+                weight_kg,
+                temperature_c,
+                systolic_bp,
+                diastolic_bp,
+                blood_sugar,
+                heart_rate,
+                spO2
+            FROM patient_vitals
+            WHERE consultation_id = %s
+        """, (consultation_id,))
+        vitals = cur.fetchone()
 
-    # ---------------- Vitals ----------------
-    cur.execute("""
-        SELECT *
-        FROM patient_vitals
-        WHERE consultation_id = %s
-    """, (consultation_id,))
-    vitals = cur.fetchone()
+        if not vitals:
+            raise ValueError("Vitals not found")
 
-    # ---------------- Symptoms ----------------
-    cur.execute("""
-        SELECT sm.symptom_name
-        FROM consultation_symptoms cs
-        JOIN symptoms_master sm
-            ON sm.symptom_id = cs.symptom_id
-        WHERE cs.consultation_id = %s
-    """, (consultation_id,))
-    symptoms = [row["symptom_name"] for row in cur.fetchall()]
+        temperature_c = fahrenheit_to_celsius(vitals["temperature_c"])
 
-    cur.close()
-    conn.close()
+        # -------------------------------
+        # PATIENT
+        # -------------------------------
+        cur.execute("""
+            SELECT
+                p.gender,
+                TIMESTAMPDIFF(YEAR, p.date_of_birth, CURDATE()) AS age
+            FROM consultations c
+            JOIN patients p ON p.patient_id = c.patient_id
+            WHERE c.consultation_id = %s
+        """, (consultation_id,))
+        patient = cur.fetchone()
 
-    # ---------------- Validation ----------------
-    if not patient or not vitals:
-        return None
+        if not patient:
+            raise ValueError("Patient not found")
 
-    required_vitals = [
-        vitals["heart_rate"],
-        vitals["temperature_c"],
-        vitals["spO2"],
-        vitals["systolic_bp"],
-        vitals["diastolic_bp"],
-        vitals["weight_kg"],
-        vitals["height_cm"],
-    ]
+        # -------------------------------
+        # SYMPTOMS (NAMES)
+        # -------------------------------
+        cur.execute("""
+            SELECT sm.symptom_name
+            FROM consultation_symptoms cs
+            JOIN symptoms_master sm ON sm.symptom_id = cs.symptom_id
+            WHERE cs.consultation_id = %s
+        """, (consultation_id,))
+        symptoms = [r["symptom_name"] for r in cur.fetchall()]
 
-    if any(v is None for v in required_vitals):
-        return None
+        return {
+            "age": patient["age"],
+            "gender": patient["gender"],
+            "height": vitals["height_cm"],
+            "weight": vitals["weight_kg"],
+            "temperature": temperature_c,  # °C for ML
+            "systolic_bp": vitals["systolic_bp"],
+            "diastolic_bp": vitals["diastolic_bp"],
+            "blood_sugar": vitals["blood_sugar"],
+            "heart_rate": vitals["heart_rate"],
+            "spo2": vitals["spO2"],
+            "symptoms": symptoms
+        }
 
-    # ---------------- Feature Engineering ----------------
-    dob = patient["date_of_birth"]
-    today = date.today()
-    age = today.year - dob.year - (
-        (today.month, today.day) < (dob.month, dob.day)
-    )
-
-    bmi = vitals["weight_kg"] / ((vitals["height_cm"] / 100) ** 2)
-
-    return {
-        # --- Demographics ---
-        "age": int(age),
-        "gender": patient["gender"],
-
-        # --- Vitals (Risk model) ---
-        "heart_rate": float(vitals["heart_rate"]),
-        "temperature": float(vitals["temperature_c"]),
-        "spO2": float(vitals["spO2"]),
-        "systolic_bp": float(vitals["systolic_bp"]),
-        "diastolic_bp": float(vitals["diastolic_bp"]),
-        "weight_kg": float(vitals["weight_kg"]),
-        "height_cm": float(vitals["height_cm"]),
-        "bmi": round(float(bmi), 2),
-
-        # --- Symptoms (Disease model) ---
-        "symptoms": symptoms  # safe even if empty
-    }
+    finally:
+        cur.close()
+        conn.close()
