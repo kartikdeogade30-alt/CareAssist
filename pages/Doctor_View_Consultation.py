@@ -173,6 +173,17 @@ if consultation["prediction_json"]:
 else:
     st.info("AI prediction not available.")
 
+st.subheader("🛡️ Suggested Precautions")
+
+precautions = dp.get("precautions", []) if isinstance(dp, dict) else []
+
+if precautions:
+    for p in precautions:
+        st.write(f"• {p}")
+else:
+    st.info("No precautions available.")
+
+
 # -------------------------------------------------
 # DOCTOR REMARKS
 # -------------------------------------------------
