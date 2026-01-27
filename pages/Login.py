@@ -4,21 +4,15 @@ from database.db_connection import get_connection
 import datetime
 
 # ==================================================
-# PASSWORD HASHING (USED EVERYWHERE)
+# PASSWORD HASHING
 # ==================================================
-
 def hash_password(password: str) -> str:
-    """
-    Hash password using SHA256.
-    Same logic used for Patient, Doctor, Admin.
-    """
     return hashlib.sha256(password.encode()).hexdigest()
 
 
 # ==================================================
 # PAGE HEADER
 # ==================================================
-
 col1, col2 = st.columns([8, 2])
 with col1:
     st.title("Login / Sign Up")
@@ -32,7 +26,6 @@ option = st.selectbox("Choose action", ["Login", "Sign Up"])
 # ==================================================
 # LOGIN SECTION
 # ==================================================
-
 if option == "Login":
 
     username = st.text_input("Username").strip().lower()
@@ -62,19 +55,28 @@ if option == "Login":
             else:
                 st.error("Invalid username or password")
 
-        # ------------------ DOCTOR LOGIN ------------------
+        # ------------------ DOCTOR LOGIN (FIXED) ------------------
         elif role == "Doctor":
             cur.execute("""
-                SELECT doctor_id, password_hash
-                FROM doctor_login
-                WHERE username = %s AND is_active = TRUE
+                SELECT 
+                    d.doctor_id,
+                    d.full_name,
+                    d.specialization,
+                    dl.password_hash
+                FROM doctor_login dl
+                JOIN doctors d ON d.doctor_id = dl.doctor_id_fk
+                WHERE dl.username = %s
+                  AND dl.is_active = TRUE
+                  AND d.is_active = TRUE
             """, (username,))
             row = cur.fetchone()
 
-            if row and hashed_input_password == row[1]:
+            if row and hashed_input_password == row[3]:
                 st.session_state.logged_in = True
                 st.session_state.role = "Doctor"
                 st.session_state.doctor_id = row[0]
+                st.session_state.doctor_name = row[1]
+                st.session_state.doctor_specialization = row[2]
                 st.switch_page("pages/Doctor.py")
             else:
                 st.error("Invalid username or password")
@@ -103,7 +105,6 @@ if option == "Login":
 # ==================================================
 # SIGN UP (PATIENT ONLY)
 # ==================================================
-
 else:
     st.subheader("Patient Registration")
 
@@ -121,7 +122,6 @@ else:
 
     if st.button("Create Account"):
 
-        # Basic phone validation
         if not phone.isdigit() or len(phone) < 10 or len(phone) > 15:
             st.error("Enter a valid phone number")
             st.stop()
@@ -129,14 +129,10 @@ else:
         conn = get_connection()
         cur = conn.cursor()
 
-        # Check username uniqueness
-        cur.execute("""
-            SELECT 1 FROM patient_login WHERE username = %s
-        """, (username,))
+        cur.execute("SELECT 1 FROM patient_login WHERE username = %s", (username,))
         if cur.fetchone():
             st.error("Username already exists")
         else:
-            # Insert patient profile
             cur.execute("""
                 INSERT INTO patients (full_name, gender, date_of_birth, phone, email)
                 VALUES (%s, %s, %s, %s, %s)
@@ -144,7 +140,6 @@ else:
 
             patient_id = cur.lastrowid
 
-            # Insert login credentials (HASHED)
             cur.execute("""
                 INSERT INTO patient_login (patient_id, username, password_hash)
                 VALUES (%s, %s, %s)
