@@ -77,7 +77,7 @@ if st.session_state.chat_step == 1:
 
     complaint = st.text_area(
         "What issue are you facing?",
-        placeholder="e.g. Routine checkup, Follow-up visit",
+        placeholder="e.g. Fever since 2 days, stomach pain",
         value=st.session_state.chat_data.get("complaint", "")
     )
 
@@ -90,7 +90,7 @@ if st.session_state.chat_step == 1:
             st.rerun()
 
 # ==================================================
-# STEP 2 – SELECT SYMPTOMS (DIRECT, SEARCHABLE)
+# STEP 2 – SELECT SYMPTOMS (MINIMUM 3)
 # ==================================================
 elif st.session_state.chat_step == 2:
     st.subheader("Step 2: Select Symptoms")
@@ -111,7 +111,7 @@ elif st.session_state.chat_step == 2:
         }
 
         selected = st.multiselect(
-            "Search and select symptoms",
+            "Search and select symptoms (minimum 3)",
             options=list(symptom_map.keys()),
             default=[
                 k for k, v in symptom_map.items()
@@ -129,13 +129,15 @@ elif st.session_state.chat_step == 2:
 
     with col2:
         if st.button("Next"):
-            if not no_symptoms and not symptom_ids:
-                st.warning("Select at least one symptom or choose 'No symptoms'.")
-            else:
-                st.session_state.chat_data["no_symptoms"] = no_symptoms
-                st.session_state.chat_data["symptoms"] = symptom_ids
-                st.session_state.chat_step = 3
-                st.rerun()
+            # 🔒 HARD VALIDATION
+            if not no_symptoms and len(symptom_ids) < 3:
+                st.error("Please select at least **3 symptoms** for accurate prediction.")
+                st.stop()
+
+            st.session_state.chat_data["no_symptoms"] = no_symptoms
+            st.session_state.chat_data["symptoms"] = symptom_ids
+            st.session_state.chat_step = 3
+            st.rerun()
 
 # ==================================================
 # STEP 3 – VITALS
@@ -211,14 +213,12 @@ elif st.session_state.chat_step == 4:
             try:
                 v = st.session_state.chat_data["vitals"]
 
-                # Update complaint
                 cur.execute("""
                     UPDATE consultations
                     SET chief_complaint = %s
                     WHERE consultation_id = %s
                 """, (st.session_state.chat_data["complaint"], consultation_id))
 
-                # Replace vitals
                 cur.execute("DELETE FROM patient_vitals WHERE consultation_id=%s", (consultation_id,))
                 cur.execute("""
                     INSERT INTO patient_vitals
@@ -233,7 +233,6 @@ elif st.session_state.chat_step == 4:
                     v["heart_rate"], v["spo2"]
                 ))
 
-                # 🔥 Replace symptoms
                 cur.execute("DELETE FROM consultation_symptoms WHERE consultation_id=%s", (consultation_id,))
                 for sid in st.session_state.chat_data.get("symptoms", []):
                     cur.execute("""
