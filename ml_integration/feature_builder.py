@@ -63,7 +63,7 @@ def build_features(consultation_id):
 
             "height": float(vitals["height_cm"]),
             "weight": float(vitals["weight_kg"]),
-            "temperature": float(vitals["temperature_c"]),  # ✅ CELSIUS
+            "temperature": float(vitals["temperature_c"]),
             "systolic_bp": int(vitals["systolic_bp"]),
             "diastolic_bp": int(vitals["diastolic_bp"]),
             "heart_rate": int(vitals["heart_rate"]),

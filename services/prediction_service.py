@@ -39,7 +39,6 @@ def generate_and_store_prediction(consultation_id):
             if missing:
                 raise ValueError(f"Missing vitals fields: {missing}")
 
-            # Force numbers once. Done.
             risk_features = {
                 "age": int(features["age"]),
                 "gender": features["gender"],

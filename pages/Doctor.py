@@ -18,9 +18,7 @@ doctor_id = st.session_state.doctor_id
 # DB HELPERS
 # -------------------------------------------------
 def get_doctor_name(doctor_id):
-    """
-    Fetch once per load (acceptable)
-    """
+
     conn = get_connection()
     cur = conn.cursor(dictionary=True)
 
@@ -38,9 +36,7 @@ def get_doctor_name(doctor_id):
 
 
 def get_consultations_by_status_for_doctor(status, doctor_id):
-    """
-    Only consultations ASSIGNED to this doctor
-    """
+
     conn = get_connection()
     cur = conn.cursor(dictionary=True)
 

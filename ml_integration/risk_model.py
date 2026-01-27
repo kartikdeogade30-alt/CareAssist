@@ -20,11 +20,6 @@ def calculate_bmi(weight, height):
 
 
 def predict_risk(features: dict) -> str:
-    """
-    STACKING VITALS RISK MODEL
-    (STRICT NUMERIC CASTING — CRITICAL)
-    """
-
     bmi = calculate_bmi(features["weight"], features["height"])
 
     X = pd.DataFrame([{
