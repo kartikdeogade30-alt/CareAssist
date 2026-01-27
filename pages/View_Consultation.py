@@ -57,19 +57,21 @@ def get_all(query, params):
 # -------------------------------------------------
 consultation = get_one("""
     SELECT
-        c.consultation_id,
-        c.chief_complaint,
-        c.doctor_remarks,
-        c.prediction_json,
-        c.status,
-        p.full_name AS patient_name,
-        p.gender,
-        p.date_of_birth,
-        d.full_name AS doctor_name
-    FROM consultations c
-    JOIN patients p ON p.patient_id = c.patient_id
-    LEFT JOIN doctors d ON d.doctor_id = c.doctor_id
-    WHERE c.consultation_id = %s
+    c.consultation_id,
+    c.chief_complaint,
+    c.doctor_remarks,
+    c.prediction_json,
+    c.status,
+    p.full_name AS patient_name,
+    p.gender,
+    p.date_of_birth,
+    d.full_name AS doctor_name,
+    d.specialization AS doctor_specialization
+FROM consultations c
+JOIN patients p ON p.patient_id = c.patient_id
+LEFT JOIN doctors d ON d.doctor_id = c.doctor_id
+WHERE c.consultation_id = %s
+
 """, (consultation_id,))
 
 vitals = get_one(
@@ -95,6 +97,21 @@ st.write(f"DOB: {consultation['date_of_birth']}")
 st.divider()
 st.subheader("📌 Chief Complaint")
 st.write(consultation["chief_complaint"])
+
+# -------------------------------------------------
+# ASSIGNED DOCTOR
+# -------------------------------------------------
+st.divider()
+st.subheader("🩺 Assigned Doctor")
+
+if consultation["doctor_name"]:
+    st.success(
+        f"{consultation['doctor_name']} "
+        f"({consultation['doctor_specialization']})"
+    )
+else:
+    st.info("Doctor will be assigned after analysis.")
+
 
 # -------------------------------------------------
 # SYMPTOMS
