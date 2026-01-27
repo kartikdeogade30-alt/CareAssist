@@ -4,38 +4,28 @@ from database.db_connection import get_connection
 from ml_integration.feature_builder import build_features
 from ml_integration.risk_model import predict_risk
 from ml_integration.disease_model import predict_disease
+
 from services.doctor_assignment_service import assign_doctor_for_consultation
+from services.precaution_service import get_precautions_for_disease
 
 
 def generate_and_store_prediction(consultation_id):
     print(f"[AI] Triggered for consultation {consultation_id}")
 
     try:
-        # ==================================================
-        # BUILD FEATURES (SINGLE SOURCE OF TRUTH)
-        # ==================================================
         features = build_features(consultation_id)
 
-        # ==================================================
-        # VITALS RISK
-        # ==================================================
+        # ---------------- VITALS RISK ----------------
         vitals_risk = {"status": "NOT_AVAILABLE"}
 
         try:
-            # Minimal, sane validation
             required = [
-                "age",
-                "gender",
-                "height",
-                "weight",
-                "temperature",
-                "systolic_bp",
-                "diastolic_bp",
-                "heart_rate",
-                "spo2",
+                "age", "gender", "height", "weight",
+                "temperature", "systolic_bp", "diastolic_bp",
+                "heart_rate", "spo2"
             ]
 
-            missing = [k for k in required if not features.get(k)]
+            missing = [k for k in required if features.get(k) is None]
             if missing:
                 raise ValueError(f"Missing vitals fields: {missing}")
 
@@ -56,23 +46,13 @@ def generate_and_store_prediction(consultation_id):
                 ),
             }
 
-            print("🔎 VITAL FEATURES:", risk_features)
-
             risk_level = predict_risk(risk_features)
-
-            vitals_risk = {
-                "status": "AVAILABLE",
-                "risk_level": risk_level,
-            }
-
-            print(f"[AI] Vitals risk computed: {risk_level}")
+            vitals_risk = {"status": "AVAILABLE", "risk_level": risk_level}
 
         except Exception as e:
             print(f"[AI] Vitals risk failed: {e}")
 
-        # ==================================================
-        # DISEASE PREDICTION (SYMPTOMS ONLY)
-        # ==================================================
+        # ---------------- DISEASE ----------------
         disease_prediction = {"status": "NOT_AVAILABLE"}
 
         try:
@@ -80,21 +60,21 @@ def generate_and_store_prediction(consultation_id):
 
             if symptoms:
                 result = predict_disease(symptoms)
+                primary = result.get("primary_disease")
+
+                precautions = get_precautions_for_disease(primary)
 
                 disease_prediction = {
                     "status": "AVAILABLE",
-                    "primary_disease": result.get("primary_disease"),
+                    "primary_disease": primary,
                     "predictions": result.get("predictions", []),
+                    "precautions": precautions
                 }
-
-                print(f"[AI] Disease predicted: {result.get('primary_disease')}")
 
         except Exception as e:
             print(f"[AI] Disease prediction failed: {e}")
 
-        # ==================================================
-        # STORE FINAL JSON
-        # ==================================================
+        # ---------------- STORE ----------------
         prediction_json = {
             "vitals_risk": vitals_risk,
             "disease_prediction": disease_prediction,
@@ -103,22 +83,17 @@ def generate_and_store_prediction(consultation_id):
         conn = get_connection()
         cur = conn.cursor()
 
-        cur.execute(
-            """
+        cur.execute("""
             UPDATE consultations
             SET prediction_json = %s
             WHERE consultation_id = %s
-            """,
-            (json.dumps(prediction_json), consultation_id),
-        )
+        """, (json.dumps(prediction_json), consultation_id))
 
         conn.commit()
         cur.close()
         conn.close()
 
-        # ==================================================
-        # DOCTOR ASSIGNMENT
-        # ==================================================
+        # ---------------- ASSIGN DOCTOR ----------------
         assigned_doctor_id = assign_doctor_for_consultation(consultation_id)
         print(f"[AI] Prediction stored & doctor assigned (ID: {assigned_doctor_id})")
 
