@@ -104,6 +104,17 @@ def generate_consultation_pdf(data: dict) -> bytes:
     else:
         draw("Disease Prediction: Not Available")
 
+    # ---- PRECAUTIONS ----
+    precautions = disease.get("precautions", [])
+    if precautions:
+        y -= 10
+        c.setFont("Helvetica-Bold", 12)
+        draw("Precautions")
+        c.setFont("Helvetica", 10)
+        for p in precautions:
+            draw(f"- {p}")
+
+
     y -= 20
 
     # -------------------------------------------------
