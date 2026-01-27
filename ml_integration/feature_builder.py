@@ -1,12 +1,5 @@
 from database.db_connection import get_connection
 
-# -------------------------------------------------
-# UTILITIES
-# -------------------------------------------------
-def fahrenheit_to_celsius(f):
-    return round((f - 32) * 5 / 9, 2)
-
-
 
 def build_features(consultation_id):
     conn = get_connection()
@@ -14,7 +7,7 @@ def build_features(consultation_id):
 
     try:
         # -------------------------------
-        # VITALS
+        # VITALS (DB IS SOURCE OF TRUTH)
         # -------------------------------
         cur.execute("""
             SELECT
@@ -34,8 +27,6 @@ def build_features(consultation_id):
         if not vitals:
             raise ValueError("Vitals not found")
 
-        temperature_c = fahrenheit_to_celsius(vitals["temperature_c"])
-
         # -------------------------------
         # PATIENT
         # -------------------------------
@@ -53,7 +44,7 @@ def build_features(consultation_id):
             raise ValueError("Patient not found")
 
         # -------------------------------
-        # SYMPTOMS (NAMES)
+        # SYMPTOMS
         # -------------------------------
         cur.execute("""
             SELECT sm.symptom_name
@@ -63,17 +54,21 @@ def build_features(consultation_id):
         """, (consultation_id,))
         symptoms = [r["symptom_name"] for r in cur.fetchall()]
 
+        # -------------------------------
+        # NORMALIZED OUTPUT (FINAL)
+        # -------------------------------
         return {
-            "age": patient["age"],
+            "age": int(patient["age"]),
             "gender": patient["gender"],
-            "height": vitals["height_cm"],
-            "weight": vitals["weight_kg"],
-            "temperature": temperature_c,  # °C for ML
-            "systolic_bp": vitals["systolic_bp"],
-            "diastolic_bp": vitals["diastolic_bp"],
-            "blood_sugar": vitals["blood_sugar"],
-            "heart_rate": vitals["heart_rate"],
-            "spo2": vitals["spO2"],
+
+            "height": float(vitals["height_cm"]),
+            "weight": float(vitals["weight_kg"]),
+            "temperature": float(vitals["temperature_c"]),  # ✅ CELSIUS
+            "systolic_bp": int(vitals["systolic_bp"]),
+            "diastolic_bp": int(vitals["diastolic_bp"]),
+            "heart_rate": int(vitals["heart_rate"]),
+            "spo2": int(vitals["spO2"]),
+
             "symptoms": symptoms
         }
 
