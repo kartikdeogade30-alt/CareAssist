@@ -1,83 +1,127 @@
 import json
 from database.db_connection import get_connection
+
 from ml_integration.feature_builder import build_features
 from ml_integration.risk_model import predict_risk
 from ml_integration.disease_model import predict_disease
+from services.doctor_assignment_service import assign_doctor_for_consultation
 
 
 def generate_and_store_prediction(consultation_id):
     print(f"[AI] Triggered for consultation {consultation_id}")
 
     try:
+        # ==================================================
+        # BUILD FEATURES (SINGLE SOURCE OF TRUTH)
+        # ==================================================
         features = build_features(consultation_id)
 
-        # -------------------------------
-        # VITALS RISK MODEL (Vitals ONLY)
-        # -------------------------------
+        # ==================================================
+        # VITALS RISK
+        # ==================================================
+        vitals_risk = {"status": "NOT_AVAILABLE"}
+
         try:
+            # Minimal, sane validation
+            required = [
+                "age",
+                "gender",
+                "height",
+                "weight",
+                "temperature",
+                "systolic_bp",
+                "diastolic_bp",
+                "heart_rate",
+                "spo2",
+            ]
+
+            missing = [k for k in required if not features.get(k)]
+            if missing:
+                raise ValueError(f"Missing vitals fields: {missing}")
+
+            # Force numbers once. Done.
             risk_features = {
-                "age": features["age"],
+                "age": int(features["age"]),
                 "gender": features["gender"],
-                "height": features["height"],
-                "weight": features["weight"],
-                "temperature": features["temperature"],
-                "systolic_bp": features["systolic_bp"],
-                "diastolic_bp": features["diastolic_bp"],
-                "blood_sugar": features["blood_sugar"],
-                "heart_rate": features["heart_rate"],
-                "spo2": features["spo2"]
+                "height": float(features["height"]),
+                "weight": float(features["weight"]),
+                "temperature": float(features["temperature"]),
+                "systolic_bp": int(features["systolic_bp"]),
+                "diastolic_bp": int(features["diastolic_bp"]),
+                "heart_rate": int(features["heart_rate"]),
+                "spO2": float(features["spo2"]),
+                "bmi": round(
+                    float(features["weight"])
+                    / ((float(features["height"]) / 100) ** 2),
+                    2,
+                ),
             }
+
+            print("🔎 VITAL FEATURES:", risk_features)
 
             risk_level = predict_risk(risk_features)
 
             vitals_risk = {
                 "status": "AVAILABLE",
-                "risk_level": risk_level
+                "risk_level": risk_level,
             }
+
+            print(f"[AI] Vitals risk computed: {risk_level}")
+
         except Exception as e:
             print(f"[AI] Vitals risk failed: {e}")
-            vitals_risk = {"status": "NOT_AVAILABLE"}
 
-        # -------------------------------
-        # DISEASE MODEL (STRING INPUT)
-        # -------------------------------
+        # ==================================================
+        # DISEASE PREDICTION (SYMPTOMS ONLY)
+        # ==================================================
+        disease_prediction = {"status": "NOT_AVAILABLE"}
+
         try:
-            if features["symptoms"]:
-                symptom_text = ", ".join(features["symptoms"])
-                result = predict_disease(symptom_text)
+            symptoms = features.get("symptoms", [])
+
+            if symptoms:
+                result = predict_disease(symptoms)
 
                 disease_prediction = {
                     "status": "AVAILABLE",
                     "primary_disease": result.get("primary_disease"),
-                    "predictions": result.get("predictions", [])
+                    "predictions": result.get("predictions", []),
                 }
-            else:
-                disease_prediction = {"status": "NOT_AVAILABLE"}
+
+                print(f"[AI] Disease predicted: {result.get('primary_disease')}")
+
         except Exception as e:
             print(f"[AI] Disease prediction failed: {e}")
-            disease_prediction = {"status": "NOT_AVAILABLE"}
 
-        # -------------------------------
-        # STORE JSON
-        # -------------------------------
+        # ==================================================
+        # STORE FINAL JSON
+        # ==================================================
         prediction_json = {
             "vitals_risk": vitals_risk,
-            "disease_prediction": disease_prediction
+            "disease_prediction": disease_prediction,
         }
 
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("""
+
+        cur.execute(
+            """
             UPDATE consultations
             SET prediction_json = %s
             WHERE consultation_id = %s
-        """, (json.dumps(prediction_json), consultation_id))
-        conn.commit()
+            """,
+            (json.dumps(prediction_json), consultation_id),
+        )
 
+        conn.commit()
         cur.close()
         conn.close()
 
-        print("[AI] Prediction stored successfully")
+        # ==================================================
+        # DOCTOR ASSIGNMENT
+        # ==================================================
+        assigned_doctor_id = assign_doctor_for_consultation(consultation_id)
+        print(f"[AI] Prediction stored & doctor assigned (ID: {assigned_doctor_id})")
 
     except Exception as e:
         print(f"[AI ERROR] {e}")
