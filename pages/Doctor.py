@@ -18,6 +18,9 @@ doctor_id = st.session_state.doctor_id
 # DB HELPERS
 # -------------------------------------------------
 def get_doctor_name(doctor_id):
+    """
+    Fetch once per load (acceptable)
+    """
     conn = get_connection()
     cur = conn.cursor(dictionary=True)
 
@@ -28,28 +31,45 @@ def get_doctor_name(doctor_id):
     """, (doctor_id,))
 
     row = cur.fetchone()
-    cur.fetchall()
     cur.close()
     conn.close()
 
     return row["full_name"] if row else "Doctor"
 
 
-def get_consultations_by_status(status):
+def get_consultations_by_status_for_doctor(status, doctor_id):
+    """
+    Only consultations ASSIGNED to this doctor
+    """
     conn = get_connection()
     cur = conn.cursor(dictionary=True)
 
-    cur.execute("""
-        SELECT
-            c.consultation_id,
-            c.created_at,
-            c.chief_complaint,
-            p.full_name
-        FROM consultations c
-        JOIN patients p ON p.patient_id = c.patient_id
-        WHERE c.status = %s
-        ORDER BY c.created_at DESC
-    """, (status,))
+    if status == "PENDING":
+        cur.execute("""
+            SELECT
+                c.consultation_id,
+                c.created_at,
+                c.chief_complaint,
+                p.full_name
+            FROM consultations c
+            JOIN patients p ON p.patient_id = c.patient_id
+            WHERE c.status = 'PENDING'
+              AND c.doctor_id = %s
+            ORDER BY c.created_at DESC
+        """, (doctor_id,))
+    else:
+        cur.execute("""
+            SELECT
+                c.consultation_id,
+                c.created_at,
+                c.chief_complaint,
+                p.full_name
+            FROM consultations c
+            JOIN patients p ON p.patient_id = c.patient_id
+            WHERE c.status = 'REVIEWED'
+              AND c.doctor_id = %s
+            ORDER BY c.created_at DESC
+        """, (doctor_id,))
 
     rows = cur.fetchall()
     cur.close()
@@ -64,7 +84,7 @@ col1, col2 = st.columns([8, 2])
 
 with col1:
     doctor_name = get_doctor_name(doctor_id)
-    st.markdown(f"## 👋 Hello Dr. {doctor_name}")
+    st.markdown(f"## 👋 Hello {doctor_name}")
 
 with col2:
     if st.button("🚪 Logout"):
@@ -86,7 +106,9 @@ search_query = st.text_input(
 # -------------------------------------------------
 st.subheader("🔴 Pending Consultations")
 
-pending_consultations = get_consultations_by_status("PENDING")
+pending_consultations = get_consultations_by_status_for_doctor(
+    "PENDING", doctor_id
+)
 
 if search_query:
     pending_consultations = [
@@ -95,7 +117,7 @@ if search_query:
     ]
 
 if not pending_consultations:
-    st.info("No pending consultations found.")
+    st.info("No pending consultations assigned to you.")
 else:
     for row in pending_consultations:
         col1, col2, col3 = st.columns([3, 4, 2])
@@ -103,20 +125,27 @@ else:
         col1.write(f"**{row['full_name']}**")
 
         complaint = row["chief_complaint"] or "No chief complaint provided"
-        col2.write(complaint[:90] + ("..." if len(complaint) > 90 else ""))
+        col2.write(
+            complaint[:90] + ("..." if len(complaint) > 90 else "")
+        )
 
-        if col3.button("Review", key=f"review_{row['consultation_id']}"):
+        if col3.button(
+            "Review",
+            key=f"review_{row['consultation_id']}"
+        ):
             st.session_state.review_consultation_id = row["consultation_id"]
             st.switch_page("pages/Doctor_View_Consultation.py")
 
 st.divider()
 
 # -------------------------------------------------
-# REVIEWED CONSULTATIONS (VIEW ONLY)
+# REVIEWED CONSULTATIONS
 # -------------------------------------------------
-st.subheader("✅ Patients Already Served")
+st.subheader("✅ Patients You Have Served")
 
-reviewed_consultations = get_consultations_by_status("REVIEWED")
+reviewed_consultations = get_consultations_by_status_for_doctor(
+    "REVIEWED", doctor_id
+)
 
 if search_query:
     reviewed_consultations = [
@@ -125,7 +154,7 @@ if search_query:
     ]
 
 if not reviewed_consultations:
-    st.info("No reviewed consultations yet.")
+    st.info("You have not reviewed any consultations yet.")
 else:
     for row in reviewed_consultations:
         col1, col2, col3 = st.columns([3, 4, 2])
@@ -133,9 +162,14 @@ else:
         col1.write(f"**{row['full_name']}**")
 
         complaint = row["chief_complaint"] or "No chief complaint provided"
-        col2.write(complaint[:90] + ("..." if len(complaint) > 90 else ""))
+        col2.write(
+            complaint[:90] + ("..." if len(complaint) > 90 else "")
+        )
 
-        if col3.button("View", key=f"view_{row['consultation_id']}"):
+        if col3.button(
+            "View",
+            key=f"view_{row['consultation_id']}"
+        ):
             st.session_state.review_consultation_id = row["consultation_id"]
             st.session_state.view_only = True
             st.switch_page("pages/Doctor_View_Consultation.py")
