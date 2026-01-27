@@ -1,102 +1,122 @@
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
-from reportlab.lib.styles import getSampleStyleSheet
 from io import BytesIO
-
-
-def safe(value, suffix=""):
-    if value in (None, "", "—"):
-        return "—"
-    return f"{value}{suffix}"
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import inch
 
 
 def generate_consultation_pdf(data: dict) -> bytes:
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
-    styles = getSampleStyleSheet()
-    story = []
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    x = 50
+    y = height - 50
+    line_gap = 16
+
+    def draw(text):
+        nonlocal y
+        c.drawString(x, y, text)
+        y -= line_gap
 
     # -------------------------------------------------
-    # TITLE
+    # HEADER
     # -------------------------------------------------
-    story.append(Paragraph("CAREASSIST – CONSULTATION REPORT", styles["Title"]))
-    story.append(Spacer(1, 14))
+    c.setFont("Helvetica-Bold", 16)
+    draw("CareAssist – Consultation Report")
+    y -= 20
 
-    # -------------------------------------------------
-    # PATIENT DETAILS
-    # -------------------------------------------------
-    story.append(Paragraph("Patient Details", styles["Heading2"]))
-    story.append(Paragraph(f"Name: {safe(data.get('patient_name'))}", styles["Normal"]))
-    story.append(Paragraph(f"Gender: {safe(data.get('gender'))}", styles["Normal"]))
-    story.append(Paragraph(f"DOB: {safe(data.get('dob'))}", styles["Normal"]))
-    story.append(Spacer(1, 12))
-
-    # -------------------------------------------------
-    # DOCTOR DETAILS
-    # -------------------------------------------------
-    story.append(Paragraph("Doctor Details", styles["Heading2"]))
-    story.append(
-        Paragraph(
-            f"Consulting Doctor: {safe(data.get('doctor_name'))}",
-            styles["Normal"]
-        )
-    )
-    story.append(Spacer(1, 12))
+    c.setFont("Helvetica", 10)
+    draw(f"Patient Name: {data.get('patient_name', '-')}")
+    draw(f"Gender: {data.get('gender', '-')}")
+    draw(f"DOB: {data.get('dob', '-')}")
+    draw(f"Doctor: {data.get('doctor_name', '-')}")
+    y -= 20
 
     # -------------------------------------------------
     # CHIEF COMPLAINT
     # -------------------------------------------------
-    story.append(Paragraph("Chief Complaint", styles["Heading2"]))
-    story.append(Paragraph(safe(data.get("chief_complaint")), styles["Normal"]))
-    story.append(Spacer(1, 12))
+    c.setFont("Helvetica-Bold", 12)
+    draw("Chief Complaint")
+    c.setFont("Helvetica", 10)
+    draw(data.get("chief_complaint", "-"))
+    y -= 20
 
     # -------------------------------------------------
     # VITALS
     # -------------------------------------------------
-    story.append(Paragraph("Vitals", styles["Heading2"]))
+    c.setFont("Helvetica-Bold", 12)
+    draw("Vitals")
+    c.setFont("Helvetica", 10)
 
     vitals = data.get("vitals", {})
-
-    vitals_table = Table([
-        ["Height (cm)", safe(vitals.get("height"))],
-        ["Weight (kg)", safe(vitals.get("weight"))],
-        ["Temperature (°C)", safe(vitals.get("temperature"))],
-        ["Blood Pressure", safe(vitals.get("bp"))],
-        ["Heart Rate", safe(vitals.get("heart_rate"))],
-        ["SpO2 (%)", safe(vitals.get("spo2"))],
-    ])
-
-    story.append(vitals_table)
-    story.append(Spacer(1, 12))
+    draw(f"Height: {vitals.get('height', '-')}")
+    draw(f"Weight: {vitals.get('weight', '-')}")
+    draw(f"Temperature: {vitals.get('temperature', '-')}")
+    draw(f"Blood Pressure: {vitals.get('bp', '-')}")
+    draw(f"Heart Rate: {vitals.get('heart_rate', '-')}")
+    draw(f"SpO2: {vitals.get('spo2', '-')}")
+    y -= 20
 
     # -------------------------------------------------
     # SYMPTOMS
     # -------------------------------------------------
-    story.append(Paragraph("Symptoms", styles["Heading2"]))
-    symptoms = data.get("symptoms", [])
+    c.setFont("Helvetica-Bold", 12)
+    draw("Reported Symptoms")
+    c.setFont("Helvetica", 10)
 
+    symptoms = data.get("symptoms", [])
     if symptoms:
         for s in symptoms:
-            story.append(Paragraph(f"- {s}", styles["Normal"]))
+            draw(f"- {s}")
     else:
-        story.append(Paragraph("No symptoms reported.", styles["Normal"]))
-
-    story.append(Spacer(1, 12))
+        draw("No symptoms reported")
+    y -= 20
 
     # -------------------------------------------------
-    # AI PREDICTION
+    # AI INSIGHTS (HUMAN READABLE)
     # -------------------------------------------------
-    story.append(Paragraph("AI Risk Prediction", styles["Heading2"]))
-    story.append(Paragraph(safe(data.get("risk_prediction")), styles["Normal"]))
-    story.append(Spacer(1, 12))
+    c.setFont("Helvetica-Bold", 12)
+    draw("AI Clinical Insights")
+    c.setFont("Helvetica", 10)
+
+    prediction = data.get("risk_prediction", {})
+
+    # ---- VITALS RISK ----
+    vitals_risk = prediction.get("vitals_risk", {})
+    if vitals_risk.get("status") == "AVAILABLE":
+        draw(f"Vitals Risk Level: {vitals_risk.get('risk_level')}")
+    else:
+        draw("Vitals Risk Level: Not Available")
+
+    y -= 10
+
+    # ---- DISEASE PREDICTION ----
+    disease = prediction.get("disease_prediction", {})
+    if disease.get("status") == "AVAILABLE":
+        draw(f"Primary Condition: {disease.get('primary_disease')}")
+
+        preds = disease.get("predictions", [])
+        if preds:
+            draw("Other Possible Conditions:")
+            for p in preds:
+                conf = round(p["confidence"] * 100, 2)
+                draw(f"- {p['disease']} ({conf}%)")
+    else:
+        draw("Disease Prediction: Not Available")
+
+    y -= 20
 
     # -------------------------------------------------
     # DOCTOR REMARKS
     # -------------------------------------------------
-    story.append(Paragraph("Doctor Remarks", styles["Heading2"]))
-    story.append(Paragraph(safe(data.get("doctor_remarks")), styles["Normal"]))
+    c.setFont("Helvetica-Bold", 12)
+    draw("Doctor Remarks")
+    c.setFont("Helvetica", 10)
+    draw(data.get("doctor_remarks", "— No remarks added —"))
 
-    doc.build(story)
-    pdf = buffer.getvalue()
-    buffer.close()
-    return pdf
+    # -------------------------------------------------
+    c.showPage()
+    c.save()
+
+    buffer.seek(0)
+    return buffer.getvalue()
