@@ -8,7 +8,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 
 # 🔥 IMPORTANT: use the new folder
-MODEL_DIR = BASE_DIR / "disease_model_1"
+MODEL_DIR = BASE_DIR / "disease_model_nb"
 
 MODEL_PATH = MODEL_DIR / "disease_model.pkl"
 SYMPTOMS_PATH = MODEL_DIR / "symptom_columns.pkl"
