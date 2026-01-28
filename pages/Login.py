@@ -1,7 +1,8 @@
 import streamlit as st
 import hashlib
-from database.db_connection import get_connection
 import datetime
+from database.db_connection import get_connection
+from utils.audit_logger import log_login_event
 
 # ==================================================
 # PASSWORD HASHING
@@ -22,17 +23,35 @@ with col2:
 
 option = st.selectbox("Choose action", ["Login", "Sign Up"])
 
+# ==================================================
+# SESSION FLAG FOR FORGOT PASSWORD
+# ==================================================
+if "forgot_password" not in st.session_state:
+    st.session_state.forgot_password = False
+
 
 # ==================================================
 # LOGIN SECTION
 # ==================================================
-if option == "Login":
+if option == "Login" and not st.session_state.forgot_password:
 
     username = st.text_input("Username").strip().lower()
     password = st.text_input("Password", type="password")
     role = st.selectbox("Login as", ["Patient", "Doctor", "Admin"])
 
-    if st.button("Log in"):
+    col1, col2 = st.columns(2)
+
+    # ---------------- LOGIN BUTTON ----------------
+    with col1:
+        login_clicked = st.button("Log in")
+
+    # ---------------- FORGOT PASSWORD BUTTON ----------------
+    with col2:
+        if st.button("Forgot Password?"):
+            st.session_state.forgot_password = True
+            st.rerun()
+
+    if login_clicked:
         conn = get_connection()
         cur = conn.cursor()
 
@@ -51,11 +70,15 @@ if option == "Login":
                 st.session_state.logged_in = True
                 st.session_state.role = "Patient"
                 st.session_state.patient_id = row[1]
+
+                log_login_event("PATIENT", row[1], "SUCCESS")
                 st.switch_page("pages/Patient.py")
             else:
+                if row:
+                    log_login_event("PATIENT", row[1], "FAILED")
                 st.error("Invalid username or password")
 
-        # ------------------ DOCTOR LOGIN (FIXED) ------------------
+        # ------------------ DOCTOR LOGIN ------------------
         elif role == "Doctor":
             cur.execute("""
                 SELECT 
@@ -77,8 +100,12 @@ if option == "Login":
                 st.session_state.doctor_id = row[0]
                 st.session_state.doctor_name = row[1]
                 st.session_state.doctor_specialization = row[2]
+
+                log_login_event("DOCTOR", row[0], "SUCCESS")
                 st.switch_page("pages/Doctor.py")
             else:
+                if row:
+                    log_login_event("DOCTOR", row[0], "FAILED")
                 st.error("Invalid username or password")
 
         # ------------------ ADMIN LOGIN ------------------
@@ -94,12 +121,79 @@ if option == "Login":
                 st.session_state.logged_in = True
                 st.session_state.role = "Admin"
                 st.session_state.admin_id = row[0]
+
+                log_login_event("ADMIN", row[0], "SUCCESS")
                 st.switch_page("pages/Admin.py")
             else:
+                if row:
+                    log_login_event("ADMIN", row[0], "FAILED")
                 st.error("Invalid username or password")
 
         cur.close()
         conn.close()
+
+
+# ==================================================
+# FORGOT PASSWORD FLOW
+# ==================================================
+elif option == "Login" and st.session_state.forgot_password:
+
+    st.subheader("🔐 Reset Password")
+
+    username = st.text_input("Username").strip().lower()
+    role = st.selectbox("Account type", ["Patient", "Doctor", "Admin"])
+    new_password = st.text_input("New Password", type="password")
+    confirm_password = st.text_input("Confirm Password", type="password")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("Reset Password"):
+            if new_password != confirm_password:
+                st.error("Passwords do not match")
+                st.stop()
+
+            conn = get_connection()
+            cur = conn.cursor()
+
+            hashed = hash_password(new_password)
+
+            if role == "Patient":
+                cur.execute("""
+                    UPDATE patient_login
+                    SET password_hash = %s
+                    WHERE username = %s AND is_active = TRUE
+                """, (hashed, username))
+
+            elif role == "Doctor":
+                cur.execute("""
+                    UPDATE doctor_login
+                    SET password_hash = %s
+                    WHERE username = %s AND is_active = TRUE
+                """, (hashed, username))
+
+            else:
+                cur.execute("""
+                    UPDATE admin_login
+                    SET password_hash = %s
+                    WHERE username = %s AND is_active = TRUE
+                """, (hashed, username))
+
+            if cur.rowcount == 0:
+                st.error("User not found or inactive")
+                conn.rollback()
+            else:
+                conn.commit()
+                st.success("Password reset successful. Please log in.")
+                st.session_state.forgot_password = False
+
+            cur.close()
+            conn.close()
+
+    with col2:
+        if st.button("⬅ Back to Login"):
+            st.session_state.forgot_password = False
+            st.rerun()
 
 
 # ==================================================
