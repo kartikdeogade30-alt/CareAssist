@@ -170,3 +170,28 @@ CREATE TABLE login_audit_logs (
     login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     login_status ENUM('SUCCESS', 'FAILED') NOT NULL
 );
+
+
+ALTER TABLE doctor_login
+ADD COLUMN doctor_id_fk INT;
+
+ALTER TABLE doctor_login
+ADD CONSTRAINT fk_doctor_login_doctor
+FOREIGN KEY (doctor_id_fk) REFERENCES doctors(doctor_id);
+
+CREATE TABLE diseases (
+    disease_id INT AUTO_INCREMENT PRIMARY KEY,
+    disease_name VARCHAR(150) NOT NULL UNIQUE
+);
+
+CREATE TABLE disease_precautions (
+    precaution_id INT AUTO_INCREMENT PRIMARY KEY,
+    disease_id INT NOT NULL,
+    precaution_text VARCHAR(255) NOT NULL,
+    precaution_order INT,
+
+    CONSTRAINT fk_precaution_disease
+        FOREIGN KEY (disease_id)
+        REFERENCES diseases(disease_id)
+        ON DELETE CASCADE
+);
